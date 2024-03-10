@@ -128,5 +128,9 @@ C言語は機能追加とアセンブラ追従による減速が生じている�
      - git checkout main
      - git merge v\*.\*.\*
      - git checkout v\*.\*.\*
+- ローカルブランチ削除
+     - git branch -d v\*.\*.\*
+- リモートブランチを削除
+     - git push origin --delete v\*.\*.\*
 - diff を見る
      - https://github.com/hsk/oplldrv/compare/v0.1.0..v0.2.0
