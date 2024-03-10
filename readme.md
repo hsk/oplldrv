@@ -111,3 +111,5 @@ C言語による実装はテストデータに対して519バイトのデータ�
      - git checkout main
      - git merge v\*.\*.\*
      - git checkout v\*.\*.\*
+- diff を見る
+     - https://github.com/hsk/oplldrv/compare/v0.1.0..v0.2.0
