@@ -67,10 +67,6 @@ def mml_parse(src):
   return r
 
 def mml_compile(name,chs):
-  tones=[]
-  ts=[171,181,192,204,216,229,242,257,272,288,305,323]
-  for o in range(8):
-    for t in ts: tones.append((o<<(9))+t)
   tempos={}; all_len = 0
   for i,ch in enumerate(chs):
     old_volume=15; at = 1; volume=0
@@ -83,7 +79,7 @@ def mml_compile(name,chs):
       v = ((at&15)<<4)|(volume&15)
       if v != old_volume: p(PVOLUME,v); old_volume=v
     t = 60*60*4/120; diff = 0.0; all = 0;all2 = 0
-    p(PTONE,0,0,PVOLUME,15)
+    p(PTONE,0,PVOLUME,15)
     for v in ch:
       match v:
         case ["wait",a] | ["keyoff", a]:
@@ -94,11 +90,11 @@ def mml_compile(name,chs):
                             all2+=t*a
                             n = int(f+0.5); diff = f-n; all += n
                             k = PWAIT if v[0] == "wait" else PKEYOFF
-                            while n>256: p(k,255-1);n-=256
-                            if n!=0: p(k,n-1)
+                            while n>256: p(k,0);n-=256
+                            if n!=0: p(k,n)
         case ["volume",b]:volume=(15-b)
-        case ["tone",b]:  outvolume();p(PTONE,tones[b]&255,(tones[b]>>8)&255)
-        case ["tempo",tempo]:t = 60*60*4/tempo; tempos[int(all2*192)]=t
+        case ["tone",b]:  outvolume();p(PTONE,b)
+        case ["tempo",t]: tempos[int(all2*192)]=60*60*4/t
         case ["@",v]: at = (v+1)
     p(PEND)
     print(f"u8 const {name}_{i}[{len(r)}]={{\n  {','.join(r)}}};")
