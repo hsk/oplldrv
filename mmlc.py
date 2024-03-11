@@ -10,7 +10,8 @@ PWAIT="PWAIT"
 PTONE="PTONE"
 PVOLUME="PVOLUME"
 PEND="PEND"
-
+PLOOP="PLOOP"
+PNEXT="PNEXT"
 def mml_parse(src):
   src =re.sub("[\\|\\s]","",src)+"\0"; pos = 0
   def readInt(default=Exception):
@@ -60,6 +61,8 @@ def mml_parse(src):
       case "v": vs[ch]=readInt(vs[ch]); o(["volume",vs[ch]])
       case ">": os[ch]+=1
       case "<": os[ch]-=1
+      case "[": o(["loop"])
+      case "]": o(["next",readInt()])
       case ";": pos+=len(ptn("[^\r\n\0]*", src[pos:])[0])
       case "\n" | "\r": pass
       case "\0": break
@@ -69,7 +72,7 @@ def mml_parse(src):
 def mml_compile(name,chs):
   tempos={}; all_len = 0
   for i,ch in enumerate(chs):
-    old_volume=15; at = 1; volume=0
+    old_volume=15; at = 1; volume=0; stack = []; stackMax = 0
     r = []
     def p(*bs):
       nonlocal r
@@ -95,8 +98,18 @@ def mml_compile(name,chs):
         case ["volume",b]:volume=(15-b)
         case ["tone",b]:  outvolume();p(PTONE,b)
         case ["tempo",t]: tempos[int(all2*192)]=60*60*4/t
-        case ["@",v]: at = (v+1)
+        case ["@",v]:     at = (v+1)
+        case ["loop"]:    stack.append((len(r),all,all2));stackMax=max(len(stack),stackMax);p(PLOOP,0)
+        case ["next", n]:
+                          (l,al,al2)=stack.pop();r[l+1]=f"{n}"; p(PNEXT); nn=(l+2)-len(r); p(nn&255,nn>>8)
+                          n-=1
+                          all2+=(all2-al2)*n; all+=(all-al)*n
+                          diff = all2-all
+                          df2 = int(diff)
+                          #print(f"df {diff} df2 {df2}",file=sys.stderr)
+                          if df2>0: p(PWAIT,df2); diff-=df2
     p(PEND)
+    r.insert(0,f"{stackMax}")
     print(f"u8 const {name}_{i}[{len(r)}]={{\n  {','.join(r)}}};")
     all_len += len(r)
     print(f"all {all} {all2}",file=sys.stderr)
@@ -107,14 +120,14 @@ def mml_compile(name,chs):
 def main():
   str="""
   D t280 o4 @4 v15 l8 q7 ||
-  D a 1   | r4 e  a  e  a  e  a  |>c+ e 1 | ^2r4^8< ||
-  D a+1   | r4 f+ a+ f+ a+ f+ a+ |>c+ f+1 | ^2r4^8< ||
-  D t240 >d 1< | r4 a >d< a >d< a >d< |>f+ a 1 | ^2r4^8 ||
+  D a 1   | r4 [e  a ]3  |>c+ e 1 | ^2r4^8< ||
+  D a+1   | r4 [f+ a+]3 |>c+ f+1 | ^2r4^8< ||
+  D t240 >d 1< | r4 [a >d<]3 |>f+ a 1 | ^2r4^8 ||
   D t180 e4^8>e8^2^1^1r1
   E o3 @6 v15 l8 q5 ||
-  E a 1   | r4 e  a  e  a  e  a  |>c+ e 1 | ^2r4^8< ||
-  E a+1   | r4 f+ a+ f+ a+ f+ a+ |>c+ f+1 | ^2r4^8< ||
-  E >d 1< | r4 a >d< a >d< a >d< |>f+ a 1 | ^2r4^8 ||
+  E a 1   | r4 [e  a ]3  |>c+ e 1 | ^2r4^8< ||
+  E a+1   | r4 [f+ a+]3  |>c+ f+1 | ^2r4^8< ||
+  E >d 1< | r4 [a >d<]3  |>f+ a 1 | ^2r4^8 ||
   E e4^8>e8^2^1^1r1
   F o1 @14 v15l4 q6 || a1^1^1^2g+2
   F f+1^1^1 f+2c+2 || d1^1^1^1 || e1^1^1r1
