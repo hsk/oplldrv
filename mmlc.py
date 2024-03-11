@@ -15,6 +15,7 @@ PEND="PEND"
 PLOOP="PLOOP"
 PNEXT="PNEXT"
 PBREAK="PBREAK"
+PSLOAD="PSLOAD"
 
 def ptn(p,s,m):
   v = re.match(p,s)
@@ -205,7 +206,11 @@ def mml_compile(name,chs):
   print(chs)
   print("*/")
   class G:pass
-  G.tempos={}; G.all_len = 0
+  G.tempos={}; G.all_len = 0; G.sounds={}
+  if len(chs["@"].keys())>0:
+    ch = []; i = 0
+    for k,ss in chs["@"].items(): ch.extend(map(str,ss));G.sounds[k]=i;i+=1
+    print(f"u8 const {name}_sound[{len(ch)}]={{{','.join(ch)}}};")
   i = -1
   for n,ch in chs.items():
     if n=="@" or n=="#" or len(ch)==0: continue
@@ -255,11 +260,14 @@ def mml_compile(name,chs):
         case [">"]:   G.o+=1
         case ["<"]:   G.o-=1
         case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
-        case ["@",v]: G.at = (v+1) if v < 15 else 2 # todo orginal sound
+        case ["@",v]  if v < 15: G.at = (v+1)
+        case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
         case ["["]:   G.stack.append([len(G.r),G.all,G.all2,None,None,None]);G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0)
         case ["]",n]:
+                      if n<2:n=1
                       [l,al,al2,br,bral,bral2]=G.stack.pop();G.r[l+1]=f"{n}"
                       p(PNEXT); nn=((l+2)-len(G.r))&0xffff; p(nn&255,nn>>8)
+                      
                       n-=1
                       if br: n-=1
                       G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
@@ -294,7 +302,10 @@ def mml_compile(name,chs):
     print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {','.join(G.r)}}};")
     G.all_len += len(G.r)
     print(f"all {G.all} {G.all2}",file=sys.stderr)
-  d = map(lambda i:f'{name}_{i},',range(i+1))
+    
+  d = list(map(lambda i:f'{name}_{i},',range(i+1)))
+  d.insert(0,f"(u8*){len(d)},")
+  d.insert(1, "NULL," if len(chs["@"].keys())==0 else f"{name}_sound,")
   print(f"u8* const {name}[]={{{''.join(d)}}};")
   G.all_len += 2*4
   print(f"data size {G.all_len}bytes.",file=sys.stderr)
