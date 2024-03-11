@@ -112,7 +112,7 @@ b       ::= 0-255
 - v0.6.0
      - パーサから長さ以外の状態を排除しました。長さは状態を残さないと面倒なので残した形。9から始まるFM音源に対応するための改修準備です。
 - v0.7.0
-     - パーサを以前使っていたものに入れ替え、それに伴ってテストデータ変更を変更しました。
+     - パーサを以前作ったものに入れ替え、それに伴ってテストデータ変更を変更しました。
 
 ## 計測結果
 
@@ -203,3 +203,5 @@ v0.2.0よりも若干0.011%ほど遅くなりましたがほとんど変わら�
      - https://github.com/hsk/oplldrv/compare/v0.2.0..v0.3.0
      - https://github.com/hsk/oplldrv/compare/v0.3.0..v0.4.0
      - https://github.com/hsk/oplldrv/compare/v0.4.0..v0.5.0
+     - https://github.com/hsk/oplldrv/compare/v0.5.0..v0.6.0
+     - https://github.com/hsk/oplldrv/compare/v0.6.0..v0.7.0
