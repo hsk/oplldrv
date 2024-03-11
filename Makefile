@@ -14,6 +14,10 @@ b:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1" -e "SRC=spehari"
 c:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=spehari"
+t1:
+	make build -e "SRC=break"
+t1c:
+	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=break"
 01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=ys2_$@"
 clean:

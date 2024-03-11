@@ -47,6 +47,7 @@ PSGDrvCh psgdrv[4];
 #define PEND    99
 #define PLOOP   100
 #define PNEXT   101
+#define PBREAK  102
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -95,6 +96,14 @@ void p_exec(PSGDrvCh* ch) {
                   break;
                 }
                 ch->sp--; ch->pc += 2; break; 
+    case PBREAK:if (*ch->sp == 1) {
+                  u16 de = *(u16*)ch->pc;
+                  ch->pc += de;
+                  ch->sp--;
+                  break;
+                }
+                ch->pc+=2;
+                break;
     }
   }
 }
@@ -110,7 +119,8 @@ void p_exec(PSGDrvCh* ch) __naked {
     ; switch (a
       cp #PKEYOFF $ jp c,3$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
-      cp #PLOOP $ jp c,7$ $ jp z,8$ $ jp 9$
+      cp #PLOOP $ jp c,7$ $ jp z,8$
+      cp #PBREAK $ jp c,9$ $ jp 10$
     ; ) {
     3$:; case PTONE:
       ; ym2413(0x20+ch->no,0);
@@ -165,6 +175,17 @@ void p_exec(PSGDrvCh* ch) __naked {
       dec IX(P_SP); ch->sp--;
       inc hl $ inc hl; ch->pc += 2;
       jp 1$; break; 
+    10$: ;case PBREAK:
+      ; if (*ch->sp == 1
+        ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 109$
+      ; ) {
+        ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
+        add hl,de ; ch->pc += de;
+        dec IX(P_SP) ; ch->sp--;
+        jp 1$; break;
+      109$:; }
+      inc hl $ inc hl; ch->pc+=2;
+      jp 1$; break;
 
     ; }
   2$:; }
@@ -232,7 +253,7 @@ void p_update(void) {
 #endif
 void main(void) {
   p_play(bgm1);
-  for (u16 a=0;a<60*16;a++) {
+  for (u16 a=0;a<60*15;a++) {
     wait();
     p_update();
   }
