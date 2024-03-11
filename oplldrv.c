@@ -108,7 +108,7 @@ void p_exec(PSGDrvCh* ch) __naked {
     ; switch (a
       cp #PWAIT $ jp c,3$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
-      cp #PLOOP $ jp c,6$ $ jp z,7$ $ jp 9$
+      cp #PLOOP $ jp c,7$ $ jp z,8$ $ jp 9$
     ; ) {
     3$:; case PKEYOFF:
       ; ym2413(0x20+ch->no,ch->tone);
@@ -147,11 +147,11 @@ void p_exec(PSGDrvCh* ch) __naked {
     8$: ; case PLOOP:
       ld a,(hl) $ inc hl ; a = *ch->pc++;
       inc IX(P_SP); ch->sp++;
-      ld IX(P_SP), a; *ch->sp = a;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld (de), a; *ch->sp = a;
       jp 1$; break;
     9$: ;case PNEXT:
-      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ex de,hl $ dec (hl); (*ch->sp)--;
-      ex de,hl
+      // ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ex de,hl $ dec (hl) $ ex de,hl; (*ch->sp)--;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ ld (de), a; (*ch->sp)--;
       ; if(*ch->sp
         jp z, 99$
       ; ) {
@@ -195,6 +195,7 @@ void p_play(u8 **bs) {
 }
 #else
 void p_play(u8 **bs) {
+  u8* sp=stack;
   PSGDrvCh *p = psgdrv;
   for(u8 i=0;i<4;i++,p++) {
     p->pc=bs[i]+1;
@@ -203,6 +204,8 @@ void p_play(u8 **bs) {
     p->no10=i+0x10;
     p->no20=i+0x20;
     p->no30=i+0x30;
+    p->sp=sp-1;
+    sp += bs[i][0];
   }
 }
 #endif

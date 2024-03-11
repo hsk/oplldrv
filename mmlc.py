@@ -101,7 +101,7 @@ def mml_compile(name,chs):
         case ["@",v]:     at = (v+1)
         case ["loop"]:    stack.append((len(r),all,all2));stackMax=max(len(stack),stackMax);p(PLOOP,0)
         case ["next", n]:
-                          (l,al,al2)=stack.pop();r[l+1]=f"{n}"; p(PNEXT); nn=(l+2)-len(r); p(nn&255,nn>>8)
+                          (l,al,al2)=stack.pop();r[l+1]=f"{n}"; p(PNEXT); nn=((l+2)-len(r))&0xffff; p(nn&255,nn>>8)
                           n-=1
                           all2+=(all2-al2)*n; all+=(all-al)*n
                           diff = all2-all
