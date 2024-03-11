@@ -222,3 +222,4 @@ v0.2.0よりも若干0.011%ほど遅くなりましたがほとんど変わら�
      - https://github.com/hsk/oplldrv/compare/v0.4.0..v0.5.0
      - https://github.com/hsk/oplldrv/compare/v0.5.0..v0.6.0
      - https://github.com/hsk/oplldrv/compare/v0.6.0..v0.7.0
+     - https://github.com/hsk/oplldrv/compare/v0.7.0..v0.8.0
