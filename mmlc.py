@@ -1,5 +1,12 @@
 import re,sys
 
+def read_all(filename):
+  fp = open(filename, "r")
+  if fp == None: return None
+  img = fp.read()  # ファイル終端まで全て読んだデータを返す
+  fp.close()
+  return img
+
 def ptn(ptn,s):
   v = re.match(ptn,s)
   if v==None: return None
@@ -34,33 +41,41 @@ def mml_parse(src):
     l2 = l
     while src[pos]==".": pos+=1; l2=l2/2; l+=l2
     return l
-  r = [[],[],[],[]]; ch = 0
-  def o(*data): nonlocal ch,r; r[ch].extend(data)
-  ls = [1/4,1/4,1/4,1/4]; os = [4,4,4,4]; vs = [15,15,15,15]; qs = [1,1,1,1]
-  tones = {"c":1,"d":3,"e":5,"f":6,"g":8,"a":10,"b":12}; loops=[[],[],[],[]]
+  class Ch:
+    def __init__(self,no):
+      self.no = no
+      self.l = 1/4
+      self.o = 4
+      self.v = 15
+      self.q = 1
+      self.loop=[]
+  chs = []; r=[]
+  for i in range(9): chs.append(Ch(i));r.append([])
+  def o(*data): nonlocal ch,r; r[ch.no].extend(data)
+  tones = {"c":1,"d":3,"e":5,"f":6,"g":8,"a":10,"b":12}
+  ch = None
   while True:
     c = src[pos]; pos += 1
     match c:
-      case "D" | "E" | "F" | "G": ch = ord(c)-ord("D")
-      case "r": o(["keyoff",readLen(ls[ch])])
+      case "D" | "E" | "F" | "G": ch = chs[ord(c)-ord("D")]
+      case "r": o(["keyoff",readLen(ch.l)])
       case "c" | "d" | "e" | "f" | "g" | "a" | "b":
                 tone = tones[c]
                 match src[pos]:
                   case "+": tone+=1; pos+=1
                   case "-": tone-=1; pos+=1
-                if ch==3: o(["volume",vs[ch]])
-                else:o(["tone",tone+os[ch]*12])
-                w=readLen(ls[ch]);q=qs[ch]
+                o(["tone",tone+ch.o*12])
+                w=readLen(ch.l);q=ch.q
                 o(["wait",w*q])
                 if q!=1: o(["keyoff",w*(1-q)])
-      case "l": ls[ch]=readLen()
-      case "o": os[ch]=readInt()
+      case "l": ch.l=readLen()
+      case "o": ch.o=readInt()
       case "@": o(["@",readInt()])
-      case "q": qs[ch]=readInt()/8
+      case "q": ch.q=readInt()/8
       case "t": o(["tempo",readInt()])
-      case "v": vs[ch]=readInt(vs[ch]); o(["volume",vs[ch]])
-      case ">": os[ch]+=1
-      case "<": os[ch]-=1
+      case "v": ch.v=readInt(ch.v); o(["volume",ch.v])
+      case ">": ch.o+=1
+      case "<": ch.o-=1
       case "[": o(["loop"])
       case "]": o(["next",readInt()])
       case ";": pos+=len(ptn("[^\r\n\0]*", src[pos:])[0])
@@ -129,21 +144,9 @@ def mml_compile(name,chs):
   print(f"u8* const {name}[]={{{''.join(d)}}};")
   all_len += 2*4
   print(f"data size {all_len}bytes.",file=sys.stderr)
+
 def main():
-  str="""
-  D t280 o4 @4 v15 l8 q7 ||
-  D a 1   | r4 [e  a ]3  |>c+ e 1 | ^2r4^8< ||
-  D a+1   | r4 [f+ a+]3 |>c+ f+1 | ^2r4^8< ||
-  D t240 >d 1< | r4 [a >d<]3 |>f+ a 1 | ^2r4^8 ||
-  D t180 e4^8>e8^2^1^1r1
-  E o3 @6 v15 l8 q5 ||
-  E a 1   | r4 [e  a ]3  |>c+ e 1 | ^2r4^8< ||
-  E a+1   | r4 [f+ a+]3  |>c+ f+1 | ^2r4^8< ||
-  E >d 1< | r4 [a >d<]3  |>f+ a 1 | ^2r4^8 ||
-  E e4^8>e8^2^1^1r1
-  F o1 @14 v15l4 q6 || a1^1^1^2g+2
-  F f+1^1^1 f+2c+2 || d1^1^1^1 || e1^1^1r1
-  """
+  str = read_all("res/spehari.mml")
   mml_compile("bgm1",mml_parse(str))
 
 main()
