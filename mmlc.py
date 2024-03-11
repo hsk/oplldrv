@@ -45,10 +45,6 @@ def mml_parse(src):
     def __init__(self,no):
       self.no = no
       self.l = 1/4
-      self.o = 4
-      self.v = 15
-      self.q = 1
-      self.loop=[]
   chs = []; r=[]
   for i in range(9): chs.append(Ch(i));r.append([])
   def o(*data): nonlocal ch,r; r[ch.no].extend(data)
@@ -64,18 +60,14 @@ def mml_parse(src):
                 match src[pos]:
                   case "+": tone+=1; pos+=1
                   case "-": tone-=1; pos+=1
-                o(["tone",tone+ch.o*12])
-                w=readLen(ch.l);q=ch.q
-                o(["wait",w*q])
-                if q!=1: o(["keyoff",w*(1-q)])
+                o(["tone",tone,readLen(ch.l)])
       case "l": ch.l=readLen()
-      case "o": ch.o=readInt()
+      case "o": o(["o",readInt()])
       case "@": o(["@",readInt()])
-      case "q": ch.q=readInt()/8
+      case "q": o(["q",readInt()/8])
       case "t": o(["tempo",readInt()])
-      case "v": ch.v=readInt(ch.v); o(["volume",ch.v])
-      case ">": ch.o+=1
-      case "<": ch.o-=1
+      case "v": o(["volume",readInt()])
+      case ">" | "<": o([c])
       case "[": o(["loop"])
       case "]": o(["next",readInt()])
       case ";": pos+=len(ptn("[^\r\n\0]*", src[pos:])[0])
@@ -85,65 +77,72 @@ def mml_parse(src):
   return r
 
 def mml_compile(name,chs):
-  tempos={}; all_len = 0
+  class G:pass
+  G.tempos={}; G.all_len = 0
   for i,ch in enumerate(chs):
-    old_volume=15; at = 1; volume=0; stack = []; stackMax = 0
-    r = []
+    
+    G.old_volume=15; G.r = []; G.at = 1
+    G.volume=0; G.stack = []; G.stackMax = 0
     def p(*bs):
-      nonlocal r
-      for b in bs: r.append(f"{b}")
+      for b in bs: G.r.append(f"{b}")
     def outvolume():
-      nonlocal old_volume,at,volume
-      v = ((at&15)<<4)|(volume&15)
-      if v != old_volume: p(PVOLUME,v); old_volume=v
-    t = 60*60*4/120; diff = 0.0; all = 0;all2 = 0
+      v = ((G.at&15)<<4)|(G.volume&15)
+      if v != G.old_volume: p(PVOLUME,v); G.old_volume=v
+    G.t = 60*60*4/120; G.diff = 0.0; G.all = 0;G.all2 = 0
     def outwait(fk,k,a):
       def p2(a):
         nonlocal fk,k
         if fk: p(fk,a)
         else: p(a)
         fk=k
-      nonlocal tempos,t,diff,all,all2
-      for t1,tm in tempos.items():
-        if t1 <= int(all2*192): t = tm
-      f=t*a+diff
-      all2+=t*a
-      n = int(f+0.5); diff = f-n; all += n
+      for t1,tm in G.tempos.items():
+        if t1 <= int(G.all2*192): G.t = tm
+      f=G.t*a+G.diff
+      G.all2+=G.t*a
+      n = int(f+0.5); G.diff = f-n; G.all += n
       if n==0: print(f"{k},{a}",file=sys.stderr); return
       while n>=256: p2(0);n-=256
       if n!=0: p2(n)
-
-    vi = 0
-    while vi<len(ch):
-      v = ch[vi]; vi += 1
+    def cmd_compile(v):
+      nonlocal vi
       match v:
         case ["wait",a] | ["keyoff", a]:
-                            outvolume()
-                            k = PWAIT if v[0] == "wait" else PKEYOFF
-                            outwait(k,k,a)
-        case ["volume",b]:volume=(15-b)
-        case ["tone",b] if ch[vi][0]!="wait": print("error!!")
-        case ["tone",b]: outvolume();p(b);outwait(False,PWAIT,ch[vi][1]); vi+=1
-        case ["tempo",t]: tempos[int(all2*192)]=60*60*4/t
-        case ["@",v]:     at = (v+1)
-        case ["loop"]:    stack.append((len(r),all,all2));stackMax=max(len(stack),stackMax);p(PLOOP,0)
+                          outvolume()
+                          k = PWAIT if v[0] == "wait" else PKEYOFF
+                          outwait(k,k,a)
+        case ["volume",b]:G.volume=(15-b)
+        case ["tone",b,w]:
+                          outvolume()
+                          p(f"/*PTONE,*/{b+G.o*12}")
+                          outwait(False,PWAIT,w*G.q)
+                          if G.q!=1: outwait(PKEYOFF,PKEYOFF,w*(1-G.q))
+        case ["q",q]:     G.q=q
+        case ["o",o]:     G.o=o
+        case [">"]:       G.o+=1
+        case ["<"]:       G.o-=1
+        case ["tempo",t]: G.tempos[int(G.all2*192)]=60*60*4/t
+        case ["@",v]:     G.at = (v+1)
+        case ["loop"]:    G.stack.append((len(G.r),G.all,G.all2));G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0)
         case ["next", n]:
-                          (l,al,al2)=stack.pop();r[l+1]=f"{n}"; p(PNEXT); nn=((l+2)-len(r))&0xffff; p(nn&255,nn>>8)
+                          (l,al,al2)=G.stack.pop();G.r[l+1]=f"{n}"; p(PNEXT); nn=((l+2)-len(G.r))&0xffff; p(nn&255,nn>>8)
                           n-=1
-                          all2+=(all2-al2)*n; all+=(all-al)*n
-                          diff = all2-all
-                          df2 = int(diff)
-                          #print(f"df {diff} df2 {df2}",file=sys.stderr)
-                          if df2>0: p(PWAIT,df2); diff-=df2
+                          G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
+                          G.diff = G.all2-G.all
+                          df2 = int(G.diff)
+                          if df2>0: p(PWAIT,df2); G.diff-=df2
+        case ["q", q]:    G.q=q
+    vi = 0
+    while vi<len(ch):
+      v = ch[vi]; vi += 1; cmd_compile(v)
     p(PEND)
-    r.insert(0,f"{stackMax}")
-    print(f"u8 const {name}_{i}[{len(r)}]={{\n  {','.join(r)}}};")
-    all_len += len(r)
-    print(f"all {all} {all2}",file=sys.stderr)
+    G.r.insert(0,f"{G.stackMax}")
+    print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {','.join(G.r)}}};")
+    G.all_len += len(G.r)
+    print(f"G.all {G.all} {G.all2}",file=sys.stderr)
   d = map(lambda i:f'{name}_{i},',range(len(chs)))
   print(f"u8* const {name}[]={{{''.join(d)}}};")
-  all_len += 2*4
-  print(f"data size {all_len}bytes.",file=sys.stderr)
+  G.all_len += 2*4
+  print(f"data size {G.all_len}bytes.",file=sys.stderr)
 
 def main():
   str = read_all(sys.argv[1])
