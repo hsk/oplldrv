@@ -123,7 +123,7 @@ def mml_compile(name,chs):
                             outwait(k,k,a)
         case ["volume",b]:volume=(15-b)
         case ["tone",b] if ch[vi][0]!="wait": print("error!!")
-        case ["tone",b]: outvolume();p(PTONE,b);outwait(False,PWAIT,ch[vi][1]); vi+=1
+        case ["tone",b]: outvolume();p(b);outwait(False,PWAIT,ch[vi][1]); vi+=1
         case ["tempo",t]: tempos[int(all2*192)]=60*60*4/t
         case ["@",v]:     at = (v+1)
         case ["loop"]:    stack.append((len(r),all,all2));stackMax=max(len(stack),stackMax);p(PLOOP,0)
@@ -146,7 +146,7 @@ def mml_compile(name,chs):
   print(f"data size {all_len}bytes.",file=sys.stderr)
 
 def main():
-  str = read_all("res/spehari.mml")
-  mml_compile("bgm1",mml_parse(str))
+  str = read_all(sys.argv[1])
+  mml_compile(sys.argv[2],mml_parse(str))
 
 main()
