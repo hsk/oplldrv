@@ -14,41 +14,45 @@ PVOLUME="PVOLUME"
 PEND="PEND"
 PLOOP="PLOOP"
 PNEXT="PNEXT"
-def ptn(p,s):
+
+def ptn(p,s,m):
   v = re.match(p,s)
-  if v==None: return None
-  m = [v.group()]; m.extend(v.groups()); return m
+  if v==None: m[:]=[""]; return False
+  r = [v.group()]; r.extend(v.groups()); m[:]=r
+  return True
 
 def preprocess(src):
-    pos = 0; macro={}
+    pos = 0; m=[]
+    macro={}
     r = {"@":[],"#":[],"9":[],"A":[],"B":[],"C":[],"D":[],"E":[],"F":[],"G":[],"H":[]}; ch = 0
-    def pt(pt):
+    def pt(pt,m):
       nonlocal pos,src
-      if m:=ptn(pt,src[pos:]): pos+=len(m[0]); return m
-      return None
+      if ptn(pt,src[pos:],m): pos+=len(m[0]); return True
+      return False
     def o(ch,*data): nonlocal r; r[ch].extend(data)
     while pos < len(src):
-      if m:=pt("^[ \t\r\n]+"): pass
-      elif m:=pt("^;[^\r\n]*"): pass
-      elif m:=pt("^#([^;\r\n]+)"): o("#",m[1])
-      elif m:=pt("^(\\*[0-9]+)\s*=\s*\{([^}]*)\}"): print(f"macro {m[1]}");macro[m[1]]=m[2].replace(" ","")
-      elif m:=pt("^@((;[^\r\n]+[\r\n]*|[^;\r\n}]+|[\r\n]+)+\})"):
-        n=m[1];r2=[]
+      if pt("^[ \t\r\n]+",m): pass
+      elif pt("^;[^\r\n]*",m): pass
+      elif pt("^#([^;\r\n]+)",m): o("#",m[1])
+      elif pt("^(\\*[0-9]+)\s*=\s*\{([^}]*)\}",m): print(f"macro {m[1]}");macro[m[1]]=m[2].replace(" ","")
+      elif pt("^@((;[^\r\n]+[\r\n]*|[^;\r\n}]+|[\r\n]+)+\})",m):
+        n=m[1];r2=[];m1=[]
         while len(n)>0:
-            if m1:=ptn("^;[^\r\n]+[\r\n]*|[\r\n]+|\s+",n): n=n[len(m1[0]):]; continue
-            if m1:=ptn("^[^;\r\n\s]+",n): r2.append(m1[0]);n=n[len(m1[0]):]; continue
+            if ptn("^;[^\r\n]+[\r\n]*|[\r\n]+|\s+",n,m1): n=n[len(m1[0]):]; continue
+            if ptn("^[^;\r\n\s]+",n,m1): r2.append(m1[0]);n=n[len(m1[0]):]; continue
             print(f"error {m}")
         o("@","".join(r2))
-      elif m:=pt("^([^\s]+)\s+([^;\r\n]+)"):list(map(lambda x:o(x,m[2].replace(" ","")),m[1]))
+      elif pt("^([^\s]+)\s+([^;\r\n]+)",m):list(map(lambda x:o(x,m[2].replace(" ","")),m[1]))
       else: pos+=1
     print(f"# {r['#']}")
     
     macrows={}
     for k,vs in r.copy().items():
       if k=="#":
+        m=[[]]
         for v in vs:
           print(f"g {v}")
-          if m:=ptn("^macro_offset\s*\\{([^}]+)\\}",v):
+          if ptn("^macro_offset\s*\\{([^}]+)\\}",v,m):
               for wn in re.split(",",m[1]):
                 kv=wn.split("=")
                 macrows[kv[0]]=int(kv[1])
@@ -86,30 +90,30 @@ def conv_voice(dt):
   return d
   
 def parse_at(lines):
-  r = {}
+  r = {};m=[]
   for l in lines:
-    if m:=ptn("^v([0-9]+)=\\{([^\\}]+)\\}$",l):
+    if ptn("^v([0-9]+)=\\{([^\\}]+)\\}$",l,m):
       r["@"+m[1]]=conv_voice(list(map(int,m[2].split(","))))
   return r
 def parse_sharp(lines):
-  r = {"opll_mode":0}
+  r = {"opll_mode":0}; m=[]
   for l in lines:
-    if m:=ptn("^(opll_mode|tempo)\s+([0-9]+)",l): r[m[1]]=int(m[2])
-    elif m:=ptn("^(title)\s*{\s*\"([^\"]+)\"\s*}",l): r[m[1]]=m[2]
+    if ptn("^(opll_mode|tempo)\s+([0-9]+)",l,m): r[m[1]]=int(m[2])
+    elif ptn("^(title)\s*{\s*\"([^\"]+)\"\s*}",l,m): r[m[1]]=m[2]
   return r
 def parse_channel(ch,src,drum):
   r = []; l=48; pos = 0
   def readInt(default=Exception):
-    nonlocal src,pos
-    if r:=ptn("^-?[0-9]+",src[pos:]): pos += len(r[0]); return int(r[0])
+    nonlocal src,pos; r=[]
+    if ptn("^-?[0-9]+",src[pos:],r): pos += len(r[0]); return int(r[0])
     if default==Exception: raise Exception(f"error channel {ch} pos {pos}\n{src[pos:pos+10]}")
     return default
   def readLen(c,default=Exception):
     def vlen():
-      nonlocal src,pos
-      if r:=ptn("^[0-9]+",src[pos:]):
+      nonlocal src,pos; r=[]
+      if ptn("^[0-9]+",src[pos:],r):
           pos += len(r[0]); return 0 if r[0]=="0" else 192/int(r[0])
-      if r:=ptn("^%[0-9]+",src[pos:]):pos += len(r[0]); return int(r[0][1:])
+      if ptn("^%[0-9]+",src[pos:],r):pos += len(r[0]); return int(r[0][1:])
       return None
     def vlen2():
       nonlocal src,pos
@@ -137,7 +141,6 @@ def parse_channel(ch,src,drum):
     print(f"{src[max(pos-5,0):min(pos+20,len(src))]}")
     for i in range(min(5,max(pos-5,0))+1): print("^",end="")
     print("")
-    raise Exception("Error")
     exit(-1)
   m = [""]
   while True:
@@ -147,13 +150,13 @@ def parse_channel(ch,src,drum):
       case ("b"|"s"|"m"|"c"|"h") if drum:
         s = set([c])
         while True:
-          if m:=ptn("[bsmch]",src[pos]) and not m[0] in s: s.add(m[0]);pos+=1
+          if ptn("[bsmch]",src[pos],m) and not m[0] in s: s.add(m[0]);pos+=1
           else: break
         flag = 0
         for c in s: flag |= 0x10>>["b","s","m","c","h"].index(c)
         if src[pos]==":": pos+=1; o("dram:",flag)
         else: o("dram", flag, readLen("",l))
-      case "v" if m := ptn("^([bsmch])([+-]?)([0-9]+)",src[pos:]) and drum:
+      case "v" if drum and ptn("^([bsmch])([+-]?)([0-9]+)",src[pos:],m):
         pos+=len(m[0])
         o("v_rhythm","v"+m[1],m[2],m[3])
       case ("c" | "d" | "e" | "f" | "g" | "a" | "b" | "r") if not drum:
@@ -169,7 +172,7 @@ def parse_channel(ch,src,drum):
         #if ln > 256: print("invalid length"); err()
         o("dram",0,ln)
       case "l": l=readLen(c,l); o("l",l)
-      case "v" if m:=ptn("^([+-])",src[pos:]):
+      case "v" if ptn("^([+-])",src[pos:],m):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
       case "@" | "o" | "]" | "v" | "q" | "t": o(c,readInt())
       case "s":
@@ -213,7 +216,9 @@ def mml_compile(name,chs):
     def outvolume():
       v = ((G.at&15)<<4)|(G.volume&15)
       if v != G.old_volume: p(PVOLUME,v); G.old_volume=v
-    G.t = 60*60*4/120; G.diff = 0.0; G.all = 0;G.all2 = 0
+    G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
+    G.diff = 0.0; G.all = 0;G.all2 = 0; G.q=1
+    
     def outwait(fk,k,a):
       def p2(a):
         nonlocal fk,k
@@ -246,11 +251,11 @@ def mml_compile(name,chs):
                       if G.q!=1: outwait(PKEYOFF,PKEYOFF,w*(1-G.q))
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
-        case ["o",o]: G.o=o
+        case ["o",o]: G.o=o-1
         case [">"]:   G.o+=1
         case ["<"]:   G.o-=1
-        case ["t",t]: G.tempos[int(G.all2*192)]=60*60*4/t
-        case ["@",v]: G.at = (v+1)
+        case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
+        case ["@",v]: G.at = (v+1) if v < 15 else 2 # todo orginal sound
         case ["["]:   G.stack.append((len(G.r),G.all,G.all2));G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0)
         case ["]",n]:
                       (l,al,al2)=G.stack.pop();G.r[l+1]=f"{n}"; p(PNEXT); nn=((l+2)-len(G.r))&0xffff; p(nn&255,nn>>8)
@@ -260,6 +265,13 @@ def mml_compile(name,chs):
                       df2 = int(G.diff)
                       if df2>0: p(PWAIT,df2); G.diff-=df2
         case ["q",q]: G.q=q
+        case ["&"]: pass #todo slar ys2_30
+        case ["|"]: pass #todo break ys2_02
+        case ["so"]: pass #todo sus on ys2_02
+        case ["v-",v]: G.volume+=v # ys2_02
+        case ["v+",v]: G.volume+=v # ys2_02
+        case ["dram",_,_]: pass #todo dram 28
+        case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
