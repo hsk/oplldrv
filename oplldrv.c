@@ -27,6 +27,7 @@ typedef struct PSGDrvCh {
   u8 no10;
   u8 no20;
   u8 no30;
+  u8* sp;
 } PSGDrvCh;
 PSGDrvCh psgdrv[4];
 #define P_WAIT 0
@@ -35,16 +36,17 @@ PSGDrvCh psgdrv[4];
 #define P_NO10 4
 #define P_NO20 5
 #define P_NO30 6
-#define P_SIZE 7
+#define P_SP   7
+#define P_SIZE 9
 
 #define IX(x) x(ix)
 
-#define PKEYOFF 0
-#define PWAIT 1
-#define PTONE 2
-#define PVOLUME 3
-#define PEND 4
-
+#define PKEYOFF 96
+#define PWAIT   97
+#define PVOLUME 98
+#define PEND    99
+#define PLOOP   100
+#define PNEXT   101
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -68,20 +70,31 @@ void p_exec(PSGDrvCh* ch) {
   ch->wait++;
   while (1) {
     u8 a = *ch->pc++;
-    switch (a) {
-    case PKEYOFF: ym2413(ch->no20,ch->tone);
-    case PWAIT: a=*ch->pc++;ch->wait=a; return;
-    case PTONE:
+    if (a < 97) {
       ym2413(ch->no20,0);
-      a=*ch->pc++; a=a+a;
+      a=a+a;
       u8* iy = &((u8*)tones)[a];
       a = iy[0];
       ym2413(ch->no10,a);
       a = iy[1];
       ch->tone=a; 
-      ym2413(ch->no20,(1<<4)|a); break;
+      ym2413(ch->no20,(1<<4)|a);
+      a=*ch->pc++;ch->wait=a;
+      return;
+    }
+    switch (a) {
+    case PKEYOFF: ym2413(ch->no20,ch->tone);
+    case PWAIT: a=*ch->pc++;ch->wait=a; return;
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
-    case PEND:  ch->pc--; return;
+    case PEND:  ch->pc--; ch->wait=0; return;
+    case PLOOP: a = *ch->pc++; ch->sp++; *ch->sp = a; break;
+    case PNEXT: (*ch->sp)--;
+                if(*ch->sp) {
+                  u16 de = *(u16*)ch->pc;
+                  ch->pc += de;
+                  break;
+                }
+                ch->sp--; ch->pc += 2; break; 
     }
   }
 }
@@ -95,22 +108,17 @@ void p_exec(PSGDrvCh* ch) __naked {
   1$:; while (1) {
     ld a,(hl) $ inc hl; u8 a = *ch->pc++;
     ; switch (a
-      cp #PWAIT $ jp c,3$ $ jp z,4$
-      cp #PVOLUME $ jp c,5$ $ jp z,6$ $ jp 7$
+      cp #PKEYOFF $ jp c,3$ $ jp z,4$
+      cp #PVOLUME $ jp c,5$ $ jp z,6$
+      cp #PLOOP $ jp c,7$ $ jp z,8$ $ jp 9$
     ; ) {
-    3$:; case PKEYOFF:
-      ; ym2413(0x20+ch->no,ch->tone);
-      ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
-      ld a,IX(P_TONE) $ out	(_IOPortOPLL2), a
-    4$:; case PWAIT:
-      ld a,(hl) $ inc hl $ ld IX(P_WAIT),a; ch->wait=*ch->pc++
-      jp 2$; return;
-    5$:; case PTONE:
+    3$:; case PTONE:
       ; ym2413(0x20+ch->no,0);
+      ld d,a
       ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
       xor a $ out (_IOPortOPLL2), a
-      ; a=*ch->pc++; a=a+a;
-      ld a,(hl) $ inc hl $ add a,a
+      ; a=a+a;
+      ld a,d $ add a,a
       ; u8* iy = &((u8*)tones)[a];
       add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
       //ld de,#_tones $ add e $ ld e,a $ jr nc, 55$ $ inc d $ 55$:
@@ -123,15 +131,41 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; ym2413(0x20+ch->no,(1<<4)|(a));
       ld a,c $ out (_IOPortOPLL1), a
       ld a,(de) $ ld IX(P_TONE), a $ or a, #16 $ out (_IOPortOPLL2), a
-      inc hl $ ld a,(hl) $ inc hl $ ld IX(P_WAIT),a 
+      ld a,(hl) $ inc hl $ ld IX(P_WAIT),a 
       jp 2$; break;
+    4$:; case PKEYOFF:
+      ; ym2413(0x20+ch->no,ch->tone);
+      ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
+      ld a,IX(P_TONE) $ out	(_IOPortOPLL2), a
+    5$:; case PWAIT:
+      ld a,(hl) $ inc hl $ ld IX(P_WAIT),a; ch->wait=*ch->pc++
+      jp 2$; return;
     6$:; case PVOLUME:
       ; ym2413(0x30+ch->no,*ch->pc++);
       ld a,IX(P_NO30) $ out (_IOPortOPLL1), a
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
       jp 1$; break;
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
-      ; jp 2$  ; return;
+      jp 2$  ; return;
+    8$: ; case PLOOP:
+      ld a,(hl) $ inc hl ; a = *ch->pc++;
+      inc IX(P_SP); ch->sp++;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld (de), a; *ch->sp = a;
+      jp 1$; break;
+    9$: ;case PNEXT:
+      // ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ex de,hl $ dec (hl) $ ex de,hl; (*ch->sp)--;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ ld (de), a; (*ch->sp)--;
+      ; if(*ch->sp
+        jp z, 99$
+      ; ) {
+        ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
+        add hl,de ; ch->pc += de;
+        jp 1$; break;
+      99$:; }
+      dec IX(P_SP); ch->sp--;
+      inc hl $ inc hl; ch->pc += 2;
+      jp 1$; break; 
+
     ; }
   2$:; }
   ld P_PC(ix),l $ ld P_PC+1(ix),h
@@ -147,27 +181,34 @@ void wait(void) __naked {
 	ret
 	__endasm;
 }
+u8 stack[100];
 #ifndef OPT2
 void p_play(u8 **bs) {
+  u8* sp=stack;
   for(int i=0;i<4;i++) {
-    psgdrv[i].pc=bs[i];
+    psgdrv[i].pc=bs[i]+1;
     psgdrv[i].wait=1;
     psgdrv[i].tone=0;
     psgdrv[i].no10=i+0x10;
     psgdrv[i].no20=i+0x20;
     psgdrv[i].no30=i+0x30;
+    psgdrv[i].sp=sp-1;
+    sp += bs[i][0];
   }
 }
 #else
 void p_play(u8 **bs) {
+  u8* sp=stack;
   PSGDrvCh *p = psgdrv;
   for(u8 i=0;i<4;i++,p++) {
-    p->pc=bs[i];
+    p->pc=bs[i]+1;
     p->wait=1;
     p->tone=0;
     p->no10=i+0x10;
     p->no20=i+0x20;
     p->no30=i+0x30;
+    p->sp=sp-1;
+    sp += bs[i][0];
   }
 }
 #endif
