@@ -82,21 +82,33 @@ def mml_compile(name,chs):
       v = ((at&15)<<4)|(volume&15)
       if v != old_volume: p(PVOLUME,v); old_volume=v
     t = 60*60*4/120; diff = 0.0; all = 0;all2 = 0
-    p(PTONE,0,PVOLUME,15)
-    for v in ch:
+    def outwait(fk,k,a):
+      def p2(a):
+        nonlocal fk,k
+        if fk: p(fk,a)
+        else: p(a)
+        fk=k
+      nonlocal tempos,t,diff,all,all2
+      for t1,tm in tempos.items():
+        if t1 <= int(all2*192): t = tm
+      f=t*a+diff
+      all2+=t*a
+      n = int(f+0.5); diff = f-n; all += n
+      if n==0: print(f"{k},{a}",file=sys.stderr); return
+      while n>=256: p2(0);n-=256
+      if n!=0: p2(n)
+
+    vi = 0
+    while vi<len(ch):
+      v = ch[vi]; vi += 1
       match v:
         case ["wait",a] | ["keyoff", a]:
-                            for t1,tm in tempos.items():
-                              if t1 <= int(all2*192): t = tm
                             outvolume()
-                            f=t*a+diff
-                            all2+=t*a
-                            n = int(f+0.5); diff = f-n; all += n
                             k = PWAIT if v[0] == "wait" else PKEYOFF
-                            while n>256: p(k,0);n-=256
-                            if n!=0: p(k,n)
+                            outwait(k,k,a)
         case ["volume",b]:volume=(15-b)
-        case ["tone",b]:  outvolume();p(PTONE,b)
+        case ["tone",b] if ch[vi][0]!="wait": print("error!!")
+        case ["tone",b]: outvolume();p(PTONE,b);outwait(False,PWAIT,ch[vi][1]); vi+=1
         case ["tempo",t]: tempos[int(all2*192)]=60*60*4/t
         case ["@",v]:     at = (v+1)
         case ["loop"]:    stack.append((len(r),all,all2));stackMax=max(len(stack),stackMax);p(PLOOP,0)

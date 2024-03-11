@@ -82,7 +82,9 @@ void p_exec(PSGDrvCh* ch) {
       ym2413(ch->no10,a);
       a = iy[1];
       ch->tone=a; 
-      ym2413(ch->no20,(1<<4)|a); break;
+      ym2413(ch->no20,(1<<4)|a);
+      a=*ch->pc++;ch->wait=a;
+      return;
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
     case PEND:  ch->pc--; ch->wait=0; return;
     case PLOOP: a = *ch->pc++; ch->sp++; *ch->sp = a; break;
@@ -135,7 +137,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; ym2413(0x20+ch->no,(1<<4)|(a));
       ld a,c $ out (_IOPortOPLL1), a
       ld a,(de) $ ld IX(P_TONE), a $ or a, #16 $ out (_IOPortOPLL2), a
-      inc hl $ ld a,(hl) $ inc hl $ ld IX(P_WAIT),a 
+      ld a,(hl) $ inc hl $ ld IX(P_WAIT),a 
       jp 2$; break;
     6$:; case PVOLUME:
       ; ym2413(0x30+ch->no,*ch->pc++);
