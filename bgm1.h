@@ -1,22 +1,21 @@
 /*
-[[['tempo', 280], ['o', 4], ['@', 4], ['volume', 15], ['q', 0.875], ['tone', 10, 1.0], ['keyoff', 0.25], ['loop'], ['tone', 5, 0.125], ['tone', 10, 0.125], ['next', 3], ['>'], ['tone', 2, 0.125], ['tone', 5, 1.5], ['keyoff', 0.375], ['<'], ['tone', 11, 1.0], ['keyoff', 0.25], ['loop'], ['tone', 7, 0.125], ['tone', 11, 0.125], ['next', 3], ['>'], ['tone', 2, 0.125], ['tone', 7, 1.5], ['keyoff', 0.375], ['<'], ['tempo', 240], ['>'], ['tone', 3, 1.0], ['<'], ['keyoff', 0.25], ['loop'], ['tone', 10, 0.125], ['>'], ['tone', 3, 0.125], ['<'], ['next', 3], ['>'], ['tone', 7, 0.125], ['tone', 10, 1.5], ['keyoff', 0.375], ['tempo', 180], ['tone', 5, 0.375], ['>'], ['tone', 5, 2.625], ['keyoff', 1.0]], [['o', 3], ['@', 6], ['volume', 15], ['q', 0.625], ['tone', 10, 1.0], ['keyoff', 0.25], ['loop'], ['tone', 5, 0.125], ['tone', 10, 0.125], ['next', 3], ['>'], ['tone', 2, 0.125], ['tone', 5, 1.5], ['keyoff', 0.375], ['<'], ['tone', 11, 1.0], ['keyoff', 0.25], ['loop'], ['tone', 7, 0.125], ['tone', 11, 0.125], ['next', 3], ['>'], ['tone', 2, 0.125], ['tone', 7, 1.5], ['keyoff', 0.375], ['<'], ['>'], ['tone', 3, 1.0], ['<'], ['keyoff', 0.25], ['loop'], ['tone', 10, 0.125], ['>'], ['tone', 3, 0.125], ['<'], ['next', 3], ['>'], ['tone', 7, 0.125], ['tone', 10, 1.5], ['keyoff', 0.375], ['tone', 5, 0.375], ['>'], ['tone', 5, 2.625], ['keyoff', 1.0]], [['o', 1], ['@', 14], ['volume', 15], ['q', 0.75], ['tone', 10, 3.5], ['tone', 9, 0.5], ['tone', 7, 3.0], ['tone', 7, 0.5], ['tone', 2, 0.5], ['tone', 3, 4.0], ['tone', 5, 3.0], ['keyoff', 1.0]], [], [], [], [], [], []]
+# []
+k 9:vs []
+k A:vs []
+k B:vs []
+k C:vs []
+k D:vs ['t280o4@4v15l8q7', 'a1r4[ea]3>c+e1^2r4^8<', 'a+1r4[f+a+]3>c+f+1^2r4^8<', 't240>d1<r4[a>d<]3>f+a1^2r4^8', 't180e4^8>e8^2^1^1r1']
+k E:vs ['o3@6v15l8q5', 'a1r4[ea]3>c+e1^2r4^8<', 'a+1r4[f+a+]3>c+f+1^2r4^8<', '>d1<r4[a>d<]3>f+a1^2r4^8', 'e4^8>e8^2^1^1r1']
+k F:vs ['o1@14v15l4q6a1^1^1^2g+2', 'f+1^1^1f+2c+2d1^1^1^1e1^1^1r1']
+k G:vs []
+k H:vs []
+{'@': [], '#': [], '9': '', 'A': '', 'B': '', 'C': '', 'D': 't280o4@4v15l8q7a1r4[ea]3>c+e1^2r4^8<a+1r4[f+a+]3>c+f+1^2r4^8<t240>d1<r4[a>d<]3>f+a1^2r4^8t180e4^8>e8^2^1^1r1', 'E': 'o3@6v15l8q5a1r4[ea]3>c+e1^2r4^8<a+1r4[f+a+]3>c+f+1^2r4^8<>d1<r4[a>d<]3>f+a1^2r4^8e4^8>e8^2^1^1r1', 'F': 'o1@14v15l4q6a1^1^1^2g+2f+1^1^1f+2c+2d1^1^1^1e1^1^1r1', 'G': '', 'H': ''}
+{'@': {}, '#': {'opll_mode': 0}, '9': [], 'A': [], 'B': [], 'C': [], 'D': [['t', 280], ['o', 4], ['@', 4], ['v', 15], ['l', 24.0], ['q', 7], ['tone', 'a', 192.0], ['tone', 'r', 48.0], ['['], ['tone', 'e', 24.0], ['tone', 'a', 24.0], [']', 3], ['>'], ['tone', 'c+', 24.0], ['tone', 'e', 288.0], ['tone', 'r', 72.0], ['<'], ['tone', 'a+', 192.0], ['tone', 'r', 48.0], ['['], ['tone', 'f+', 24.0], ['tone', 'a+', 24.0], [']', 3], ['>'], ['tone', 'c+', 24.0], ['tone', 'f+', 288.0], ['tone', 'r', 72.0], ['<'], ['t', 240], ['>'], ['tone', 'd', 192.0], ['<'], ['tone', 'r', 48.0], ['['], ['tone', 'a', 24.0], ['>'], ['tone', 'd', 24.0], ['<'], [']', 3], ['>'], ['tone', 'f+', 24.0], ['tone', 'a', 288.0], ['tone', 'r', 72.0], ['t', 180], ['tone', 'e', 72.0], ['>'], ['tone', 'e', 504.0], ['tone', 'r', 192.0]], 'E': [['o', 3], ['@', 6], ['v', 15], ['l', 24.0], ['q', 5], ['tone', 'a', 192.0], ['tone', 'r', 48.0], ['['], ['tone', 'e', 24.0], ['tone', 'a', 24.0], [']', 3], ['>'], ['tone', 'c+', 24.0], ['tone', 'e', 288.0], ['tone', 'r', 72.0], ['<'], ['tone', 'a+', 192.0], ['tone', 'r', 48.0], ['['], ['tone', 'f+', 24.0], ['tone', 'a+', 24.0], [']', 3], ['>'], ['tone', 'c+', 24.0], ['tone', 'f+', 288.0], ['tone', 'r', 72.0], ['<'], ['>'], ['tone', 'd', 192.0], ['<'], ['tone', 'r', 48.0], ['['], ['tone', 'a', 24.0], ['>'], ['tone', 'd', 24.0], ['<'], [']', 3], ['>'], ['tone', 'f+', 24.0], ['tone', 'a', 288.0], ['tone', 'r', 72.0], ['tone', 'e', 72.0], ['>'], ['tone', 'e', 504.0], ['tone', 'r', 192.0]], 'F': [['o', 1], ['@', 14], ['v', 15], ['l', 48.0], ['q', 6], ['tone', 'a', 672.0], ['tone', 'g+', 96.0], ['tone', 'f+', 576.0], ['tone', 'f+', 96.0], ['tone', 'c+', 96.0], ['tone', 'd', 768.0], ['tone', 'e', 576.0], ['tone', 'r', 192.0]], 'G': [], 'H': []}
 */
 u8 const bgm1_0[99]={
-  1,PVOLUME,80,/*PTONE,*/58,45,PKEYOFF,6,PKEYOFF,13,PLOOP,3,/*PTONE,*/53,6,PKEYOFF,1,/*PTONE,*/58,5,PKEYOFF,1,PNEXT,247,255,/*PTONE,*/62,5,PKEYOFF,1,/*PTONE,*/65,68,PKEYOFF,9,PKEYOFF,20,/*PTONE,*/59,45,PKEYOFF,6,PKEYOFF,13,PLOOP,3,/*PTONE,*/55,6,/*PTONE,*/59,6,PKEYOFF,1,PNEXT,249,255,/*PTONE,*/62,5,PKEYOFF,1,/*PTONE,*/67,68,PKEYOFF,9,PKEYOFF,19,/*PTONE,*/63,53,PKEYOFF,7,PKEYOFF,15,PLOOP,3,/*PTONE,*/58,7,PKEYOFF,1,/*PTONE,*/63,6,PKEYOFF,1,PNEXT,247,255,/*PTONE,*/67,7,PKEYOFF,1,/*PTONE,*/70,79,PKEYOFF,11,PKEYOFF,22,/*PTONE,*/65,27,PKEYOFF,3,/*PTONE,*/77,184,PKEYOFF,26,PKEYOFF,80,PEND};
+  1,PVOLUME,80,/*PTONE,*/57,45,PKEYOFF,6,PKEYOFF,13,PLOOP,3,/*PTONE,*/52,6,PKEYOFF,1,/*PTONE,*/57,5,PKEYOFF,1,PNEXT,247,255,/*PTONE,*/61,5,PKEYOFF,1,/*PTONE,*/64,68,PKEYOFF,9,PKEYOFF,20,/*PTONE,*/58,45,PKEYOFF,6,PKEYOFF,13,PLOOP,3,/*PTONE,*/54,6,/*PTONE,*/58,6,PKEYOFF,1,PNEXT,249,255,/*PTONE,*/61,5,PKEYOFF,1,/*PTONE,*/66,68,PKEYOFF,9,PKEYOFF,19,/*PTONE,*/62,53,PKEYOFF,7,PKEYOFF,15,PLOOP,3,/*PTONE,*/57,7,PKEYOFF,1,/*PTONE,*/62,6,PKEYOFF,1,PNEXT,247,255,/*PTONE,*/66,7,PKEYOFF,1,/*PTONE,*/69,79,PKEYOFF,11,PKEYOFF,22,/*PTONE,*/64,27,PKEYOFF,3,/*PTONE,*/76,184,PKEYOFF,26,PKEYOFF,80,PEND};
 u8 const bgm1_1[101]={
-  1,PVOLUME,112,/*PTONE,*/46,32,PKEYOFF,19,PKEYOFF,13,PLOOP,3,/*PTONE,*/41,4,PKEYOFF,3,/*PTONE,*/46,4,PKEYOFF,2,PNEXT,247,255,/*PTONE,*/50,4,PKEYOFF,2,/*PTONE,*/53,49,PKEYOFF,28,PKEYOFF,20,/*PTONE,*/47,32,PKEYOFF,19,PKEYOFF,13,PLOOP,3,/*PTONE,*/43,4,PKEYOFF,2,/*PTONE,*/47,4,PKEYOFF,3,PNEXT,247,255,/*PTONE,*/50,4,PKEYOFF,2,/*PTONE,*/55,48,PKEYOFF,29,PKEYOFF,19,/*PTONE,*/51,38,PKEYOFF,22,PKEYOFF,15,PLOOP,3,/*PTONE,*/46,5,PKEYOFF,3,/*PTONE,*/51,5,PKEYOFF,2,PNEXT,247,255,/*PTONE,*/55,5,PKEYOFF,3,/*PTONE,*/58,56,PKEYOFF,34,PKEYOFF,22,/*PTONE,*/53,19,PKEYOFF,11,/*PTONE,*/65,132,PKEYOFF,78,PKEYOFF,80,PEND};
+  1,PVOLUME,112,/*PTONE,*/45,32,PKEYOFF,19,PKEYOFF,13,PLOOP,3,/*PTONE,*/40,4,PKEYOFF,3,/*PTONE,*/45,4,PKEYOFF,2,PNEXT,247,255,/*PTONE,*/49,4,PKEYOFF,2,/*PTONE,*/52,49,PKEYOFF,28,PKEYOFF,20,/*PTONE,*/46,32,PKEYOFF,19,PKEYOFF,13,PLOOP,3,/*PTONE,*/42,4,PKEYOFF,2,/*PTONE,*/46,4,PKEYOFF,3,PNEXT,247,255,/*PTONE,*/49,4,PKEYOFF,2,/*PTONE,*/54,48,PKEYOFF,29,PKEYOFF,19,/*PTONE,*/50,38,PKEYOFF,22,PKEYOFF,15,PLOOP,3,/*PTONE,*/45,5,PKEYOFF,3,/*PTONE,*/50,5,PKEYOFF,2,PNEXT,247,255,/*PTONE,*/54,5,PKEYOFF,3,/*PTONE,*/57,56,PKEYOFF,34,PKEYOFF,22,/*PTONE,*/52,19,PKEYOFF,11,/*PTONE,*/64,132,PKEYOFF,78,PKEYOFF,80,PEND};
 u8 const bgm1_2[34]={
-  0,PVOLUME,240,/*PTONE,*/22,135,PKEYOFF,45,/*PTONE,*/21,19,PKEYOFF,7,/*PTONE,*/19,115,PKEYOFF,39,/*PTONE,*/19,19,PKEYOFF,7,/*PTONE,*/14,19,PKEYOFF,6,/*PTONE,*/15,180,PKEYOFF,60,/*PTONE,*/17,180,PKEYOFF,60,PKEYOFF,80,PEND};
-u8 const bgm1_3[2]={
-  0,PEND};
-u8 const bgm1_4[2]={
-  0,PEND};
-u8 const bgm1_5[2]={
-  0,PEND};
-u8 const bgm1_6[2]={
-  0,PEND};
-u8 const bgm1_7[2]={
-  0,PEND};
-u8 const bgm1_8[2]={
-  0,PEND};
-u8* const bgm1[]={bgm1_0,bgm1_1,bgm1_2,bgm1_3,bgm1_4,bgm1_5,bgm1_6,bgm1_7,bgm1_8,};
+  0,PVOLUME,240,/*PTONE,*/21,135,PKEYOFF,45,/*PTONE,*/20,19,PKEYOFF,7,/*PTONE,*/18,115,PKEYOFF,39,/*PTONE,*/18,19,PKEYOFF,7,/*PTONE,*/13,19,PKEYOFF,6,/*PTONE,*/14,180,PKEYOFF,60,/*PTONE,*/16,180,PKEYOFF,60,PKEYOFF,80,PEND};
+u8* const bgm1[]={bgm1_0,bgm1_1,bgm1_2,};
