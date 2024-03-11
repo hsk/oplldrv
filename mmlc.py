@@ -238,8 +238,7 @@ def mml_compile(name,chs):
       match v:
         case ["tone","r",a]:
                       outvolume()
-                      k = PWAIT if v[0] == "wait" else PKEYOFF
-                      outwait(k,k,a/192)
+                      outwait(PWAIT,PWAIT,a/192)
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
