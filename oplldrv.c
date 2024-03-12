@@ -41,14 +41,16 @@ PSGDrvCh psgdrv[9];
 #define P_SIZE 9
 #define IX(x) x(ix)
 
-#define PKEYOFF 96
-#define PWAIT   97
-#define PVOLUME 98
-#define PEND    99
-#define PLOOP   100
-#define PNEXT   101
-#define PBREAK  102
-#define PSLOAD  103
+#define PDRUM   0x60
+#define PKEYOFF 0x80
+#define PWAIT   0x81
+#define PVOLUME 0x82
+#define PEND    0x83
+#define PLOOP   0x84
+#define PNEXT   0x85
+#define PBREAK  0x86
+#define PSLOAD  0x87
+
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -72,7 +74,7 @@ void p_exec(PSGDrvCh* ch) {
   ch->wait++;
   while (1) {
     u8 a = *ch->pc++;
-    if (a < 97) {
+    if (a < PDRUM) {
       ym2413(ch->no20,0);
       a=a+a;
       u8* iy = &((u8*)tones)[a];
@@ -82,6 +84,13 @@ void p_exec(PSGDrvCh* ch) {
       ch->tone=a; 
       ym2413(ch->no20,(1<<4)|a);
       a=*ch->pc++;ch->wait=a;
+      return;
+    }
+    if (a < PKEYOFF) {
+      ym2413(0x0e,(1<<5)|0);
+      ym2413(0x0e,(a&0x3f));
+      a=*ch->pc++;
+      ch->wait=a;
       return;
     }
     switch (a) {
@@ -130,7 +139,8 @@ void p_exec(PSGDrvCh* ch) __naked {
   1$:; while (1) {
     ld a,(hl) $ inc hl; u8 a = *ch->pc++;
     ; switch (a
-      cp #PKEYOFF $ jp c,3$ $ jp z,4$
+      cp #PDRUM $ jp c, 3$
+      cp #PKEYOFF $ jp c,12$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
       cp #PBREAK $ jp c,9$ $ jp z,10$ $ jp 11$
@@ -216,6 +226,16 @@ void p_exec(PSGDrvCh* ch) __naked {
         pop bc
         jp 1$; break;
       ; }
+    12$: ; case PDRUM:
+      and #0x3f $ ld d,a
+      ; ym2413(0x0e,(1<<5)|0);
+      ld a,#0x0e $ out (_IOPortOPLL1), a
+      ld a,#0x20 $ out (_IOPortOPLL2), a
+      ; ym2413(0x0e,(1<<5)|(a&31));
+      ld a,#0x0e $ out (_IOPortOPLL1), a
+      ld a,d     $ out (_IOPortOPLL2), a
+      ld a,(hl) $ inc hl $ ld IX(P_WAIT),a; ch->wait=*ch->pc++
+      jp 2$  ; return;
     ; }
   2$:; }
   ld P_PC(ix),l $ ld P_PC+1(ix),h
@@ -233,6 +253,18 @@ void wait(void) __naked {
 }
 u8 stack[100];
 u8 track_size;
+void reset(unsigned char mode){
+    printf("reset %d\n",mode);
+    ym2413(0x0e, mode<<5);
+    if (mode) {
+      ym2413(0x16, 0x20);// F-Num LSB for channel 7 (slots 13,16)  BD1,BD2
+      ym2413(0x17, 0x50);// F-Num LSB for channel 8 (slots 14,17)  HH ,SD
+      ym2413(0x18, 0xC0);// F-Num LSB for channel 9 (slots 15,18)　TOM,TCY 
+      ym2413(0x26, 0x05);// Block/F-Num MSB for channel 7          BD1,BD2
+      ym2413(0x27, 0x05);// Block/F-Num MSB for channel 8          HH ,SD
+      ym2413(0x28, 0x01);// Block/F-Num MSB for channel 9          TOM,TCY
+    }
+}
 #ifndef OPT2
 void p_play(u8 **bs) {
   u8* sp=stack;
@@ -286,6 +318,7 @@ void p_update(void) {
 #endif
 #endif
 void main(void) {
+  reset(((u8*)bgm1)[1]);
   p_play(bgm1);
   for (u16 a=0;a<60*15;a++) {
     wait();

@@ -22,6 +22,10 @@ t2:
 	make build -e "SRC=sound"
 t2c:
 	make build -e "SRC=sound" -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1"
+t3:
+	make build -e "SRC=drum"
+t3c:
+	make build -e "SRC=drum" -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1"
 
 
 01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30:

@@ -206,15 +206,17 @@ def mml_compile(name,chs):
   print(chs)
   print("*/")
   class G:pass
-  G.tempos={}; G.all_len = 0; G.sounds={}
+  G.tempos={}; G.all_len = 0; G.sounds={}; G.n2i={}; G.i2n={}
   if len(chs["@"].keys())>0:
     ch = []; i = 0
     for k,ss in chs["@"].items(): ch.extend(map(str,ss));G.sounds[k]=i;i+=1
     print(f"u8 const {name}_sound[{len(ch)}]={{{','.join(ch)}}};")
   i = -1
   for n,ch in chs.items():
-    if n=="@" or n=="#" or len(ch)==0: continue
+    if n=="@" or n=="#": continue
     i+=1
+    G.n2i[n]=i
+    G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
     G.volume=0; G.stack = []; G.stackMax = 0
     def p(*bs):
@@ -288,7 +290,7 @@ def mml_compile(name,chs):
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
                       p(PBREAK,None,None)
-        case ["dram",_,_]: pass #todo dram 28
+        case ["dram",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(None,PWAIT,w) #todo dram 28
         case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
         case ["&"]: pass #todo slar ys2_30
         case ["so"]: pass #todo sus on ys2_02
@@ -303,7 +305,9 @@ def mml_compile(name,chs):
     print(f"all {G.all} {G.all2}",file=sys.stderr)
     
   d = list(map(lambda i:f'{name}_{i},',range(i+1)))
-  d.insert(0,f"(u8*){len(d)},")
+  if "F" in G.n2i and G.n2i["F"]!=6:
+    print(f"n2i {list(G.n2i.items())}")
+  d.insert(0,f"(u8*){len(d)|(chs['#']['opll_mode']<<8)},")
   d.insert(1, "NULL," if len(chs["@"].keys())==0 else f"{name}_sound,")
   print(f"u8* const {name}[]={{{''.join(d)}}};")
   G.all_len += 2*4
