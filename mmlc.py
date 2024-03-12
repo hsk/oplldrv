@@ -276,10 +276,9 @@ def mml_compile(name,chs):
                       df2 = int(G.diff)
                       if df2>0: p(PWAIT,df2); G.diff-=df2
                       if br: # ブレイクアドレス
-                        pos = (len(G.r) - br)
+                        pos = len(G.r) - br
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
-#                        G.r[br+1]= 
         case ["q",q]: G.q=q
         case ["v-",v]:G.volume+=v # ys2_02
         case ["v+",v]:G.volume+=v # ys2_02
