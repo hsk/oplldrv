@@ -212,18 +212,25 @@ void p_exec(PSGDrvCh* ch) __naked {
     11$: ; case PSLOAD:{
         ld a,(hl) $ inc hl ; a = *ch->pc++;
         ; u8* de = &sound[a];
-        push bc
-        add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
-        ld bc, #_IOPortOPLL1
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ inc b $ ld a,(de) $ inc de $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        out (c), b $ ld a,(de) $ out (_IOPortOPLL2), a; ym2413(0,*de++);
-        pop bc
+        ex de,hl
+        ld	hl, #_sound
+        add	a, (hl)
+        inc	hl
+        ld	c, a
+        ld	a, #0x00
+        adc	a, (hl)
+        ld	h, a
+        ld  l, c
+        ld bc, #_IOPortOPLL2
+        xor a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        inc a $ out (_IOPortOPLL1), a $ outi; ym2413(0,*de++);
+        ex de,hl
         jp 1$; break;
       ; }
     12$: ; case PDRUM:
