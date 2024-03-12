@@ -326,7 +326,7 @@ void p_update(void) {
 void main(void) {
   reset(((u8*)bgm1)[1]);
   p_play(bgm1);
-  for (u16 a=0;a<60*15;a++) {
+  for (u16 a=0;a<60*60;a++) {
     wait();
     p_update();
   }
