@@ -14,6 +14,8 @@ b:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1" -e "SRC=spehari"
 c:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=spehari"
+d:
+	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=spehari2"
 t1:
 	make build -e "SRC=break"
 t1c:

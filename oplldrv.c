@@ -261,7 +261,6 @@ void wait(void) __naked {
 u8 stack[100];
 u8 track_size;
 void reset(unsigned char mode){
-    printf("reset %d\n",mode);
     ym2413(0x0e, mode<<5);
     if (mode) {
       ym2413(0x16, 0x20);// F-Num LSB for channel 7 (slots 13,16)  BD1,BD2
