@@ -270,25 +270,30 @@ def mml_compile(name,chs):
         case ["["]:   
                       diff = max(0,G.all2-G.all)
                       G.all+=diff
-                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff]);G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0)
-        case ["]",n]:
+                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff])
+                      G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
+        case ["]",n]: # n回ループする
+                      n1=n
                       if n<2:n=1
-                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n}"
-                      p(PNEXT); nn=((l+2)-len(G.r))&0xffff; p(nn&255,nn>>8)
+                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n}"
+                      p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
                       n-=1
                       if br: n-=1
                       G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
                       if br: G.all+=bral;G.all2+=bral2
                       G.all-=diff
                       diff=G.all2-G.all
-                      print(f"  [ {al2-al} ]{n+1+int(bool(br))} {diff}",file=sys.stderr)
-                      outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
+                      diff1=int(diff)
+                      p(diff1,n1)
+                      G.all+=diff1
+                      print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
+                      #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if br: # ブレイクアドレス
-                        pos = len(G.r) - br
+                        pos = len(G.r) - br + 2
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
-        case ["v-",v]:G.volume+=v # ys2_02
+        case ["v-",v]:G.volume-=v # ys2_02
         case ["v+",v]:G.volume+=v # ys2_02
         case ["|"]:
                       #print("|",file=sys.stderr)
