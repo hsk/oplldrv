@@ -343,7 +343,7 @@ def mml_compile(name,chs):
                       print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
                       #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if br: # ブレイクアドレス
-                        pos = len(G.r) - br + 2
+                        pos = len(G.r) - br - 2
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
