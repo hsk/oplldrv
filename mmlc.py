@@ -201,6 +201,58 @@ def parse(txt):
       case "#": r[ch]=parse_sharp(lines)
       case _:   r[ch]=parse_channel(ch,"".join(lines)+"\0",r["#"]["opll_mode"] and ch=="F")
   return r
+def loop_expand(chs):
+  class G:
+    volume=15
+    octave=5
+    before=0
+    after=0
+  def expand(n,ch):
+    G.before+=len(ch)
+    G.volume=15; G.octave=4
+    r = []
+    stack = []
+    i = -1
+    while i+1 < len(ch):
+      i+=1
+      v = ch[i]
+      if True:
+        match v:
+          case ["v",n]: G.volume=n
+          case ["v-",n]:G.volume-=n
+          case ["v+",n]:G.volume+=n
+          case ["o",n]: G.octave=n-1
+          case ["<"] if 0<G.octave: G.octave-=1
+          case [">"] if G.octave<7: G.octave+=1
+          case ["["]: stack.append([len(r),None,G.volume,G.octave])
+          case ["|"]: stack[-1][1]=len(r)
+          case ["]",n]:
+            [start,br,vol,octave]= stack.pop()
+            if br == None: br=len(r)-1
+            G.octave=octave
+            if (G.volume != vol or G.octave != octave) and n!=0: # 状態が違うので展開する
+              before=len(r)
+              loop1=r[start+1:br]
+              loop=loop1+r[br+1:-1]
+              if len(loop1)==len(loop):
+                print(f"  expand loop {len(r)-start} to ({len(loop)+2}-2)*{n}={len(loop)*n}",file=sys.stderr)
+              else:
+                print(f"  expand loop {len(r)-start} to {len(loop)}*({n}-1)+{len(loop1)}={len(loop)*(n-1)+len(loop1)}",file=sys.stderr)                
+              r[:]=r[:start]
+              for j in range(n):
+                #print(f'  expand: {f"loop1({len(loop1)})" if j==n-1 else f"loop({len(loop)})"}',file=sys.stderr)
+                r.extend(loop1 if j==n-1 else loop)
+              after=len(r)
+              G.after += after-before
+              continue
+      r.append(v)
+    return r
+  r = {}
+  for n,ch in chs.items():
+    if n=="@" or n=="#" or ch==None: r[n]=ch; continue
+    r[n]= expand(n,ch)
+  print(f"loop expand {G.before}+{G.after} to {G.before+G.after}commands +{G.after/G.before*100:0.2f}%",file=sys.stderr)
+  return r
 
 def mml_compile(name,chs):
   print(chs)
@@ -218,7 +270,7 @@ def mml_compile(name,chs):
     G.n2i[n]=i
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
-    G.volume=0; G.stack = []; G.stackMax = 0
+    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
     def outvolume():
@@ -262,8 +314,10 @@ def mml_compile(name,chs):
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
         case ["o",o]: G.o=o-1
-        case [">"]:   G.o+=1
-        case ["<"]:   G.o-=1
+        case [">"]:
+                      if G.o<7:G.o+=1
+        case ["<"]:
+                      if G.o>0:G.o-=1
         case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
@@ -328,6 +382,6 @@ def mml_compile(name,chs):
 def main():
   print("/*")
   str = read_all(sys.argv[1])
-  mml_compile(sys.argv[2],parse(str))
+  mml_compile(sys.argv[2],loop_expand(parse(str)))
 
 main()
