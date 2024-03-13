@@ -97,19 +97,53 @@ void p_exec(PSGDrvCh* ch) {
     case PKEYOFF: ym2413(ch->no20,ch->tone);
     case PWAIT: a=*ch->pc++;ch->wait=a; return;
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
-    case PEND:  ch->pc--; ch->wait=0; return;
-    case PLOOP: a = *ch->pc++; ch->sp++; *ch->sp = a; break;
+    case PEND:  ch->pc--; ch->wait=0;ym2413(ch->no20,0); return;
+    case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXT: (*ch->sp)--;
                 if(*ch->sp) {
-                  u16 de = *(u16*)ch->pc;
-                  ch->pc += de;
+                  u16 bc = *(u16*)ch->pc;
+                  ch->pc+=2;
+                  // dda wait
+                  u8 a = *ch->pc++;
+                  a += ch->sp[-1];
+                  u8 e = *ch->pc;
+                  ch->pc += bc;
+                  if (e <= a) {
+                    a -= e;
+                    ch->sp[-1]=a;
+                    return;
+                  }
+                  ch->sp[-1]=a;
                   break;
                 }
-                ch->sp--; ch->pc += 2; break; 
+                ch->pc += 2;
+                ch->sp-=2;
+                {// dda wait
+                  u8 a = *ch->pc++;
+                  a += ch->sp[1];
+                  u8 e = *ch->pc++;
+                  if (e <= a) {
+                    a -= e;
+                    ch->sp[1]=a;
+                    return;
+                  }
+                  ch->sp[1]=a;
+                }
+                break; 
     case PBREAK:if (*ch->sp == 1) {
-                  u16 de = *(u16*)ch->pc;
-                  ch->pc += de;
-                  ch->sp--;
+                  u16 bc = *(u16*)ch->pc;
+                  ch->pc += bc;
+                  // add dda
+                  ch->sp-=2;
+                  u8 a = *ch->pc++;
+                  a += ch->sp[1];
+                  u8 e = *ch->pc++;
+                  if (e <= a) {
+                    a -= e;
+                    ch->sp[1]=a;
+                    return;
+                  }
+                  ch->sp[1]=a;
                   break;
                 }
                 ch->pc+=2;
@@ -181,30 +215,44 @@ void p_exec(PSGDrvCh* ch) __naked {
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
       jp 2$  ; return;
     8$: ; case PLOOP:
-      ld a,(hl) $ inc hl ; a = *ch->pc++;
-      inc IX(P_SP); ch->sp++;
-      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld (de), a; *ch->sp = a;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1)
+      ; *(++ch->sp) = *ch->pc++
+      inc de $ ld a,(hl) $ inc hl $ ld (de), a
+      ; *(++ch->sp) = *ch->pc++
+      inc de $ ld a,(hl) $ inc hl $ ld (de), a
+      ld IX(P_SP),e $ ld IX(P_SP+1),d
       jp 1$; break;
     9$: ;case PNEXT:
-      // ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ex de,hl $ dec (hl) $ ex de,hl; (*ch->sp)--;
       ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ ld (de), a; (*ch->sp)--;
       ; if(*ch->sp
         jp z, 99$
       ; ) {
-        ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
-        add hl,de ; ch->pc += de;
+        ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl; u16 bc = *(u16*)ch->pc;
+        inc hl $ inc hl ; ch->pc+=2
+        // dda wait
+        ld a,(hl) $ inc hl; u8 a = *ch->pc++;
+        dec de $ ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
+        ld e,(hl) ; u8 e = *ch->pc;
+        add hl,bc ; ch->pc += de;
+        cp e $ jp c, 98$; if (e <= a) {
+          sub a,e; a -= e; ld e,IX(P_SP) $ ld (de),a; ch->sp[-1]=a;
+          
+          ; jp 2$; return;
+        98$:; }
         jp 1$; break;
       99$:; }
-      dec IX(P_SP); ch->sp--;
-      inc hl $ inc hl; ch->pc += 2;
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
+      ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
+      inc hl $ inc hl $ inc hl $ inc hl; ch->pc += 4;
       jp 1$; break; 
     10$: ;case PBREAK:
       ; if (*ch->sp == 1
         ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 109$
       ; ) {
         ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
-        add hl,de ; ch->pc += de;
-        dec IX(P_SP) ; ch->sp--;
+        add hl,de $ add hl add hl; ch->pc += de+2;
+        ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
+        ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
         jp 1$; break;
       109$:; }
       inc hl $ inc hl; ch->pc+=2;
@@ -284,7 +332,7 @@ void p_play(u8 **bs) {
     psgdrv[i].no20=i+0x20;
     psgdrv[i].no30=i+0x30;
     psgdrv[i].sp=sp-1;
-    sp += bs[i][0];
+    sp += bs[i][0]*2;
   }
 }
 #else
@@ -301,7 +349,7 @@ void p_play(u8 **bs) {
     p->no20=i+0x20;
     p->no30=i+0x30;
     p->sp=sp-1;
-    sp += bs[i][0];
+    sp += bs[i][0]*2;
   }
 }
 #endif
@@ -326,7 +374,7 @@ void p_update(void) {
 void main(void) {
   reset(((u8*)bgm1)[1]);
   p_play(bgm1);
-  for (u16 a=0;a<60*15;a++) {
+  for (u16 a=0;a<60*60;a++) {
     wait();
     p_update();
   }

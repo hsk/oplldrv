@@ -225,9 +225,9 @@ def mml_compile(name,chs):
       v = ((G.at&15)<<4)|(G.volume&15)
       if v != G.old_volume: p(PVOLUME,v); G.old_volume=v
     G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
-    G.diff = 0.0; G.all = 0;G.all2 = 0; G.q=1
+    G.all = 0;G.all2 = 0; G.q=1
     
-    def outwait(fk,k,a):
+    def outwait(prm, fk,k,a):
       def p2(a):
         nonlocal fk,k
         if fk: p(fk,a)
@@ -235,10 +235,13 @@ def mml_compile(name,chs):
         fk=k
       for t1,tm in G.tempos.items():
         if t1 <= int(G.all2*192): G.t = tm
-      f=G.t*a+G.diff
+
+      diff = G.all2-G.all
+      #if abs(diff) >= 1:print(f"diff {prm} {diff}",file=sys.stderr)
+      f=G.t*a+diff
       G.all2+=G.t*a
-      n = int(f+0.5); G.diff = f-n; G.all += n
-      if n==0: print(f"{k},{a}",file=sys.stderr); return
+      n = int(f); G.all += n
+      if n==0: return
       while n>=256: p2(0);n-=256
       if n!=0: p2(n)
     def cmd_compile(v):
@@ -246,7 +249,7 @@ def mml_compile(name,chs):
       match v:
         case ["tone","r",a]:
                       outvolume()
-                      outwait(PWAIT,PWAIT,a/192)
+                      outwait("r",PWAIT,PWAIT,a/192)
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
@@ -254,8 +257,8 @@ def mml_compile(name,chs):
                       #print(f"w {w} q {G.q}")
                       outvolume()
                       p(f"/*PTONE,*/{b+G.o*12}")
-                      outwait(False,PWAIT,w*G.q)
-                      if G.q!=1: outwait(PKEYOFF,PKEYOFF,w*(1-G.q))
+                      outwait(f"tone {b}", False,PWAIT,w*G.q)
+                      if G.q!=1: outwait(f"off {b}",PKEYOFF,PKEYOFF,w*(1-G.q))
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
         case ["o",o]: G.o=o-1
@@ -264,33 +267,42 @@ def mml_compile(name,chs):
         case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
-        case ["["]:   G.stack.append([len(G.r),G.all,G.all2,None,None,None]);G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0)
-        case ["]",n]:
+        case ["["]:   
+                      diff = max(0,G.all2-G.all)
+                      G.all+=diff
+                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff])
+                      G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
+        case ["]",n]: # n回ループする
+                      n1=n
                       if n<2:n=1
-                      [l,al,al2,br,bral,bral2]=G.stack.pop();G.r[l+1]=f"{n}"
-                      p(PNEXT); nn=((l+2)-len(G.r))&0xffff; p(nn&255,nn>>8)
-                      
+                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n}"
+                      p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
                       n-=1
                       if br: n-=1
                       G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
                       if br: G.all+=bral;G.all2+=bral2
-                      G.diff = G.all2-G.all
-                      df2 = int(G.diff)
-                      if df2>0: p(PWAIT,df2); G.diff-=df2
+                      G.all-=diff
+                      diff=G.all2-G.all
+                      diff1=int(diff)
+                      p(diff1,n1)
+                      G.all+=diff1
+                      print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
+                      #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if br: # ブレイクアドレス
-                        pos = len(G.r) - br
+                        pos = len(G.r) - br + 2
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
-        case ["v-",v]:G.volume+=v # ys2_02
+        case ["v-",v]:G.volume-=v # ys2_02
         case ["v+",v]:G.volume+=v # ys2_02
         case ["|"]:
+                      #print("|",file=sys.stderr)
                       if G.stack[-1][3] != None: print("error arleady use |")
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
                       p(PBREAK,None,None)
-        case ["dram",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(None,PWAIT,w) #todo dram 28
+        case ["dram",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w) #todo dram 28
         case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
         case ["&"]: pass #todo slar ys2_30
         case ["so"]: pass #todo sus on ys2_02
@@ -302,7 +314,7 @@ def mml_compile(name,chs):
     G.r.insert(0,f"{G.stackMax}")
     print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {','.join(G.r)}}};")
     G.all_len += len(G.r)
-    print(f"all {G.all} {G.all2}",file=sys.stderr)
+    print(f"{n} all {G.all} {G.all2}",file=sys.stderr)
     
   d = list(map(lambda i:f'{name}_{i},',range(i+1)))
   if "F" in G.n2i and G.n2i["F"]!=6:
