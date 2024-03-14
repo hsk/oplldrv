@@ -121,9 +121,9 @@ void p_exec(PSGDrvCh* ch) {
                 {// dda wait
                   u8 a = *ch->pc++;
                   a += ch->sp[1];
-                  u8 e = *ch->pc++;
-                  if (e <= a) {
-                    a -= e;
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
                     ch->sp[1]=a;
                     return;
                   }
@@ -137,9 +137,9 @@ void p_exec(PSGDrvCh* ch) {
                   ch->sp-=2;
                   u8 a = *ch->pc++;
                   a += ch->sp[1];
-                  u8 e = *ch->pc++;
-                  if (e <= a) {
-                    a -= e;
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
                     ch->sp[1]=a;
                     return;
                   }
@@ -213,6 +213,9 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
       jp 1$; break;
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
+      ; ym2413(ch->no20,0)
+      ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
+      xor a $ out	(_IOPortOPLL2), a
       jp 2$  ; return;
     8$: ; case PLOOP:
       ld e,IX(P_SP) $ ld d,IX(P_SP+1)
@@ -233,26 +236,47 @@ void p_exec(PSGDrvCh* ch) __naked {
         ld a,(hl) $ inc hl; u8 a = *ch->pc++;
         dec de $ ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
         ld e,(hl) ; u8 e = *ch->pc;
-        add hl,bc ; ch->pc += de;
+        add hl,bc ; ch->pc += bc;
         cp e $ jp c, 98$; if (e <= a) {
-          sub a,e; a -= e; ld e,IX(P_SP) $ ld (de),a; ch->sp[-1]=a;
-          
+          sub a,e; a -= e
+          ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
           ; jp 2$; return;
         98$:; }
+        ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
         jp 1$; break;
       99$:; }
+      inc hl $ inc hl                                   ; ch->pc += 2;
       ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
       ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
-      inc hl $ inc hl $ inc hl $ inc hl; ch->pc += 4;
+      inc hl $ ld a,(hl); u8 a = *ch->pc++;
+      inc de
+      ld c,a $ ld a,(de) $ add a,c; a += ch->sp[1];
+      ld c,(hl) $ inc hl; u8 c = *ch->pc++;
+      cp c $ jp c, 97$; if (c <= a) {
+        sub a,c; a -= c;
+        ld(de),a; ch->sp[1]=a;
+        jp 2$; return;
+      97$:; }
+      ld(de),a; ch->sp[1]=a;
       jp 1$; break; 
     10$: ;case PBREAK:
       ; if (*ch->sp == 1
         ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 109$
       ; ) {
-        ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
-        add hl,de $ add hl add hl; ch->pc += de+2;
-        ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
-        ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
+        ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl; u16 bc = *(u16*)ch->pc;
+        add hl,bc ; ch->pc += bc;
+        dec de $ dec de $ ld IX(P_SP),e $ ld IX(P_SP+1),d; ch->sp-=2;
+        ld a,(hl) $ inc hl; u8 a = *ch->pc++;
+        inc de
+        ld c,a $ ld a,(de) $ add a, c; a += ch->sp[1];
+        ld c,(hl) $ inc hl; u8 c = *ch->pc++;
+        cp c $ jp c, 107$; if (c <= a) {
+          sub a,c; a -= c;
+          ld (de), a; ch->sp[1]=a;
+          jp 2$; return;
+        107$:; }
+        ld (de), a; ch->sp[1]=a;
+
         jp 1$; break;
       109$:; }
       inc hl $ inc hl; ch->pc+=2;
