@@ -195,7 +195,8 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
       cp #PBREAK $ jp c,9$ $ jp z,10$
-      cp #PSLAON $ jp c,11$ $ jp z,13$ $ jp 14$
+      cp #PSLAON $ jp c,11$ $ jp z,13$
+      cp #PDRUMV $ jp c,14$ $ jp 15$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -341,7 +342,10 @@ void p_exec(PSGDrvCh* ch) __naked {
     14$: ; case PSUSON:
       ld IX(P_SUS),#1; ch->sus=1;
       jp 1$ ; break;
- 
+    15$: ; case PDRUMV:
+      ld a,(hl) $ inc hl $ out (_IOPortOPLL1), a ; ym2413(*ch->pc++,*ch->pc++);
+      ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
+      jp 1$ ; break;
     ; }
   2$:; }
   ld P_PC(ix),l $ ld P_PC+1(ix),h
