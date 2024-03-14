@@ -229,12 +229,12 @@ def loop_expand(chs):
           case ["|"]: stack[-1][1]=len(r)
           case ["]",n]:
             [start,br,vol,octave]= stack.pop()
-            if br == None: br=len(r)
+            if br == None: br=len(r)-1
             G.octave=octave
             if (G.volume != vol or G.octave != octave) and n!=0: # 状態が違うので展開する
               before=len(r)
               loop1=r[start+1:br]
-              loop=loop1+r[br+1:]
+              loop=loop1+r[br+1:-1]
               if len(loop1)==len(loop):
                 print(f"  expand loop {len(r)-start} to ({len(loop)+2}-2)*{n}={len(loop)*n}",file=sys.stderr)
               else:
