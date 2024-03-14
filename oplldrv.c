@@ -101,8 +101,7 @@ void p_exec(PSGDrvCh* ch) {
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXT: (*ch->sp)--;
                 if(*ch->sp) {
-                  u16 bc = *(u16*)ch->pc;
-                  ch->pc+=2;
+                  u16 bc = *(u16*)ch->pc; ch->pc+=2;
                   // dda wait
                   u8 a = *ch->pc++;
                   a += ch->sp[-1];
@@ -230,25 +229,24 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; if(*ch->sp
         jp z, 99$
       ; ) {
-        ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl; u16 bc = *(u16*)ch->pc;
-        inc hl $ inc hl ; ch->pc+=2
+        ld IX(P_SP),e $ ld IX(P_SP+1),d $ dec de
+        ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl; u16 bc = *(u16*)ch->pc; ch->pc+=2
         // dda wait
         ld a,(hl) $ inc hl; u8 a = *ch->pc++;
-        dec de $ ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
+        ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
         ld e,(hl) ; u8 e = *ch->pc;
         add hl,bc ; ch->pc += bc;
         cp e $ jp c, 98$; if (e <= a) {
           sub a,e; a -= e
           ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
-          ; jp 2$; return;
+          jp 2$; return;
         98$:; }
         ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
         jp 1$; break;
       99$:; }
       inc hl $ inc hl                                   ; ch->pc += 2;
-      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
-      ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
-      inc hl $ ld a,(hl); u8 a = *ch->pc++;
+      dec de $ dec de $ ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
+      ld a,(hl) $ inc hl; u8 a = *ch->pc++;
       inc de
       ld c,a $ ld a,(de) $ add a,c; a += ch->sp[1];
       ld c,(hl) $ inc hl; u8 c = *ch->pc++;
@@ -276,7 +274,6 @@ void p_exec(PSGDrvCh* ch) __naked {
           jp 2$; return;
         107$:; }
         ld (de), a; ch->sp[1]=a;
-
         jp 1$; break;
       109$:; }
       inc hl $ inc hl; ch->pc+=2;
