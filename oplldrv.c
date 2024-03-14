@@ -110,6 +110,9 @@ void p_exec(PSGDrvCh* ch) {
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXT: (*ch->sp)--;
                 if(*ch->sp) {
+                  if(*ch->sp==255) {
+                    (*ch->sp)++;
+                  }
                   u16 bc = *(u16*)ch->pc; ch->pc+=2;
                   // dda wait
                   u8 a = *ch->pc++;
@@ -251,6 +254,9 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; if(*ch->sp
         jp z, 99$
       ; ) {
+        jp nc, 96$ ; if(*ch->sp==255) {
+          inc a      ; (*ch->sp)++;
+        96$:       ; }
         ld IX(P_SP),e $ ld IX(P_SP+1),d $ dec de
         ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl; u16 bc = *(u16*)ch->pc; ch->pc+=2
         // dda wait

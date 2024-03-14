@@ -342,7 +342,7 @@ def mml_compile(name,chs):
         case ["]",n]: # n回ループする
                       n1=n
                       if n<2:n=1
-                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n}"
+                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
                       p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
                       n-=1
                       if br: n-=1

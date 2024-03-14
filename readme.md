@@ -216,6 +216,8 @@ ym2413(0x28, 0x01);// Block/F-Num MSB for channel 9          TOM,TCY
      - サスティンとスラーを追加しました。
 - v1.4.0
      - ドラムの音量設定に対応しました。
+- v1.5.0
+     - 無限ループに対応。
 
 ## 計測結果
 
@@ -343,3 +345,4 @@ v0.2.0よりも若干0.011%ほど遅くなりましたがほとんど変わら�
      - https://github.com/hsk/oplldrv/compare/v1.1.0..v1.2.0
      - https://github.com/hsk/oplldrv/compare/v1.2.0..v1.3.0
      - https://github.com/hsk/oplldrv/compare/v1.3.0..v1.4.0
+     - https://github.com/hsk/oplldrv/compare/v1.4.0..v1.5.0
