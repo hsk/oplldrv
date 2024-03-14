@@ -40,7 +40,9 @@ PSGDrvCh psgdrv[9];
 #define P_NO20 5
 #define P_NO30 6
 #define P_SP   7
-#define P_SIZE 9
+#define P_SLA  8
+#define P_SUS  9
+#define P_SIZE 10
 #define IX(x) x(ix)
 
 #define PDRUM   0x60
@@ -78,7 +80,9 @@ void p_exec(PSGDrvCh* ch) {
   while (1) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
-      if(!ch->sla)ym2413(ch->no20,0);
+      if (!ch->sla) {
+        ym2413(ch->no20,0);
+      }
       ch->sla=ch->sus;
       a=a+a;
       u8* iy = &((u8*)tones)[a];
@@ -183,15 +187,18 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PKEYOFF $ jp c,12$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
-      cp #PBREAK $ jp c,9$ $ jp z,10$ $ jp 11$
+      cp #PBREAK $ jp c,9$ $ jp z,10$
+      cp #PSLAON $ jp c,11$ $ jp z,13$ $ jp 14$
     ; ) {
     3$:; case PTONE:
-      ; ym2413(0x20+ch->no,0);
       ld d,a
-      ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
-      xor a $ out (_IOPortOPLL2), a
-      ; a=a+a;
-      ld a,d $ add a,a
+      xor a $ cp IX(P_SLA) $ jp nz, 31$; if (!ch->sla) {
+        ; ym2413(ch->no20,0);
+        ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
+        xor a $ out (_IOPortOPLL2), a
+      31$: ; }
+      ld a,IX(P_SUS) $ ld IX(P_SLA),a ; ch->sla=ch->sus
+      ld a,d $ add a,a ; a=a+a;
       ; u8* iy = &((u8*)tones)[a];
       add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
       //ld de,#_tones $ add e $ ld e,a $ jr nc, 55$ $ inc d $ 55$:
@@ -321,6 +328,13 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld a,d     $ out (_IOPortOPLL2), a
       ld a,(hl) $ inc hl $ ld IX(P_WAIT),a; ch->wait=*ch->pc++
       jp 2$  ; return;
+    13$: ; case PSLAON:
+      ld IX(P_SLA),#1; ch->sla=1;
+      jp 1$ ; break;
+    14$: ; case PSUSON:
+      ld IX(P_SUS),#1; ch->sus=1;
+      jp 1$ ; break;
+ 
     ; }
   2$:; }
   ld P_PC(ix),l $ ld P_PC+1(ix),h
