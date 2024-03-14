@@ -28,6 +28,8 @@ typedef struct PSGDrvCh {
   u8 no20;
   u8 no30;
   u8* sp;
+  u8 sla;
+  u8 sus;
 } PSGDrvCh;
 u8* sound;
 PSGDrvCh psgdrv[9];
@@ -50,7 +52,8 @@ PSGDrvCh psgdrv[9];
 #define PNEXT   0x85
 #define PBREAK  0x86
 #define PSLOAD  0x87
-
+#define PSLAON  0x88
+#define PSUSON  0x89
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -75,7 +78,8 @@ void p_exec(PSGDrvCh* ch) {
   while (1) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
-      ym2413(ch->no20,0);
+      if(!ch->sla)ym2413(ch->no20,0);
+      ch->sla=ch->sus;
       a=a+a;
       u8* iy = &((u8*)tones)[a];
       a = iy[0];
@@ -160,6 +164,8 @@ void p_exec(PSGDrvCh* ch) {
                   ym2413(7,*de);
                   break;
                 }
+    case PSLAON: ch->sla=1; break;
+    case PSUSON: ch->sus=1; break;
     }
   }
 }
@@ -333,6 +339,8 @@ void p_play(u8 **bs) {
     psgdrv[i].no30=i+0x30;
     psgdrv[i].sp=sp-1;
     sp += bs[i][0]*2;
+    psgdrv[i].sla=0;
+    psgdrv[i].sus=0;
   }
 }
 #else
@@ -350,6 +358,8 @@ void p_play(u8 **bs) {
     p->no30=i+0x30;
     p->sp=sp-1;
     sp += bs[i][0]*2;
+    p->sla=0;
+    p->sus=0;
   }
 }
 #endif

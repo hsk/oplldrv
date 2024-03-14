@@ -16,7 +16,8 @@ PLOOP="PLOOP"
 PNEXT="PNEXT"
 PBREAK="PBREAK"
 PSLOAD="PSLOAD"
-
+PSLAON="PSLAON"
+PSUSON="PSUSON"
 def ptn(p,s,m):
   v = re.match(p,s)
   if v==None: m[:]=[""]; return False
@@ -228,12 +229,12 @@ def loop_expand(chs):
           case ["|"]: stack[-1][1]=len(r)
           case ["]",n]:
             [start,br,vol,octave]= stack.pop()
-            if br == None: br=len(r)-1
+            if br == None: br=len(r)
             G.octave=octave
             if (G.volume != vol or G.octave != octave) and n!=0: # 状態が違うので展開する
               before=len(r)
               loop1=r[start+1:br]
-              loop=loop1+r[br+1:-1]
+              loop=loop1+r[br+1:]
               if len(loop1)==len(loop):
                 print(f"  expand loop {len(r)-start} to ({len(loop)+2}-2)*{n}={len(loop)*n}",file=sys.stderr)
               else:
@@ -270,7 +271,7 @@ def mml_compile(name,chs):
     G.n2i[n]=i
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
-    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4
+    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
     def outvolume():
@@ -358,8 +359,8 @@ def mml_compile(name,chs):
                       p(PBREAK,None,None)
         case ["dram",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w) #todo dram 28
         case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
-        case ["&"]: pass #todo slar ys2_30
-        case ["so"]: pass #todo sus on ys2_02
+        case ["&"]: p(PSLAON)
+        case ["so"]: p(PSUSON)
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
