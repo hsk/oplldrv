@@ -18,6 +18,7 @@ PBREAK="PBREAK"
 PSLOAD="PSLOAD"
 PSLAON="PSLAON"
 PSUSON="PSUSON"
+PDRUMV="PDRUMV"
 def ptn(p,s,m):
   v = re.match(p,s)
   if v==None: m[:]=[""]; return False
@@ -272,11 +273,20 @@ def mml_compile(name,chs):
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False
+    G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
     def outvolume():
       v = ((G.at&15)<<4)|(G.volume&15)
       if v != G.old_volume: p(PVOLUME,v); G.old_volume=v
+    def out_drum_volume(v):
+      v0=15-G.drum_v["b"]
+      v1=(((15-G.drum_v["h"])&15)<<4)|((15-G.drum_v["s"])&15)
+      v2=(((15-G.drum_v["m"])&15)<<4)|((15-G.drum_v["c"])&15)
+      #print(f"drum volume {v0:02x} {v1:02x} {v2:02x}",file=sys.stderr)
+      if (v & 1) and v0 != G.old_drum_v[0]: print(f"drum_v0 {v0:02x}",file=sys.stderr); p(PDRUMV,0x36,v0); G.old_drum_v[0]=v0
+      if ((v&2) or (v&16)) and v1 != G.old_drum_v[1]: print(f"drum_v1 {v2:02x}",file=sys.stderr); p(PDRUMV,0x37,v1); G.old_drum_v[1]=v1
+      if ((v&4) or (v&8)) and v2 != G.old_drum_v[2]: print(f"drum_v2 {v2:02x}",file=sys.stderr); p(PDRUMV,0x38,v2); G.old_drum_v[2]=v2
     G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
     G.all = 0;G.all2 = 0; G.q=1
     
@@ -297,12 +307,14 @@ def mml_compile(name,chs):
       if n==0: return
       while n>=256: p2(0);n-=256
       if n!=0: p2(n)
-    def cmd_compile(v):
+    def cmd_compile(name,v):
       nonlocal vi
       match v:
         case ["tone","r",a]:
                       outvolume()
                       outwait("r",PWAIT,PWAIT,a/192)
+        case ["v",b] if name=="F":
+                      for k in G.drum_v.keys(): G.drum_v[k]=b
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
@@ -357,14 +369,16 @@ def mml_compile(name,chs):
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
                       p(PBREAK,None,None)
-        case ["drum",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
-        case ["drum_v",_,_,_]: pass
+        case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
+        case ["drum_v",a,"+",n]: G.drum_v[a]+=int(n)
+        case ["drum_v",a,"-",n]: G.drum_v[a]-=int(n)
+        case ["drum_v",a,"",n]: G.drum_v[a]=int(n)
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
-      v = ch[vi]; vi += 1; cmd_compile(v)
+      v = ch[vi]; vi += 1; cmd_compile(n,v)
     p(PEND)
     G.r.insert(0,f"{G.stackMax}")
     print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {','.join(G.r)}}};")

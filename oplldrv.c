@@ -54,6 +54,7 @@ PSGDrvCh psgdrv[9];
 #define PSLOAD  0x87
 #define PSLAON  0x88
 #define PSUSON  0x89
+#define PDRUMV  0x8A
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -166,6 +167,12 @@ void p_exec(PSGDrvCh* ch) {
                 }
     case PSLAON: ch->sla=1; break;
     case PSUSON: ch->sus=1; break;
+    case PDRUMV:{
+                  u8 n=*ch->pc++;
+                  u8 v=*ch->pc++;
+                  ym2413(n,v);
+                  break;
+                }
     }
   }
 }
@@ -323,6 +330,9 @@ void reset(unsigned char mode){
       ym2413(0x26, 0x05);// Block/F-Num MSB for channel 7          BD1,BD2
       ym2413(0x27, 0x05);// Block/F-Num MSB for channel 8          HH ,SD
       ym2413(0x28, 0x01);// Block/F-Num MSB for channel 9          TOM,TCY
+      ym2413(0x36, 0xff);
+      ym2413(0x37, 0xff);
+      ym2413(0x38, 0xff);
     }
 }
 #ifndef OPT2
