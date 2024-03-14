@@ -191,9 +191,10 @@ void p_exec(PSGDrvCh* ch) __naked {
     ; ) {
     3$:; case PTONE:
       ld d,a
+      ld a,IX(P_NO20) $ ld c,a
       xor a $ cp IX(P_SLA) $ jp nz, 31$; if (!ch->sla) {
-        ; ym2413(ch->no20,0);
-        ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
+        ; ym2413(ch->no20,0);  
+        ld a,c $ out (_IOPortOPLL1), a
         xor a $ out (_IOPortOPLL2), a
       31$: ; }
       ld a,IX(P_SUS) $ ld IX(P_SLA),a ; ch->sla=ch->sus
