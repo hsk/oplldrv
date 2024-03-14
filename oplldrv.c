@@ -40,9 +40,9 @@ PSGDrvCh psgdrv[9];
 #define P_NO20 5
 #define P_NO30 6
 #define P_SP   7
-#define P_SLA  8
-#define P_SUS  9
-#define P_SIZE 10
+#define P_SLA  9
+#define P_SUS  10
+#define P_SIZE 11
 #define IX(x) x(ix)
 
 #define PDRUM   0x60
