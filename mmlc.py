@@ -156,11 +156,11 @@ def parse_channel(ch,src,drum):
           else: break
         flag = 0
         for c in s: flag |= 0x10>>["b","s","m","c","h"].index(c)
-        if src[pos]==":": pos+=1; o("dram:",flag)
-        else: o("dram", flag, readLen("",l))
+        if src[pos]==":": pos+=1; o("drum:",flag)
+        else: o("drum", flag, readLen("",l))
       case "v" if drum and ptn("^([bsmch])([+-]?)([0-9]+)",src[pos:],m):
         pos+=len(m[0])
-        o("v_rhythm","v"+m[1],m[2],m[3])
+        o("drum_v",m[1],m[2],m[3])
       case ("c" | "d" | "e" | "f" | "g" | "a" | "b" | "r") if not drum:
         match src[pos]:
           case "#": c+="+"; pos += 1
@@ -172,7 +172,7 @@ def parse_channel(ch,src,drum):
       case "r" if drum:
         ln=readLen(c,l)
         #if ln > 256: print("invalid length"); err()
-        o("dram",0,ln)
+        o("drum",0,ln)
       case "l": l=readLen(c,l); o("l",l)
       case "v" if ptn("^([+-])",src[pos:],m):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
@@ -347,8 +347,8 @@ def mml_compile(name,chs):
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
-        case ["v-",v]:G.volume-=v # ys2_02
-        case ["v+",v]:G.volume+=v # ys2_02
+        case ["v-",v]:G.volume+=v
+        case ["v+",v]:G.volume+=v
         case ["|"]:
                       #print("|",file=sys.stderr)
                       if G.stack[-1][3] != None: print("error arleady use |")
@@ -356,10 +356,10 @@ def mml_compile(name,chs):
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
                       p(PBREAK,None,None)
-        case ["dram",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w) #todo dram 28
-        case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
-        case ["&"]: pass #todo slar ys2_30
-        case ["so"]: pass #todo sus on ys2_02
+        case ["drum",v,w]: w=w/192;p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w) #todo dram 28
+        case ["drum_v",_,_,_]: pass
+        case ["&"]: pass
+        case ["so"]: pass
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
