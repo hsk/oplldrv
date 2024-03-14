@@ -154,11 +154,11 @@ def parse_channel(ch,src,drum):
           else: break
         flag = 0
         for c in s: flag |= 0x10>>["b","s","m","c","h"].index(c)
-        if src[pos]==":": pos+=1; o("dram:",flag)
-        else: o("dram", flag, readLen("",l))
+        if src[pos]==":": pos+=1; o("drum:",flag)
+        else: o("drum", flag, readLen("",l))
       case "v" if drum and ptn("^([bsmch])([+-]?)([0-9]+)",src[pos:],m):
         pos+=len(m[0])
-        o("v_rhythm","v"+m[1],m[2],m[3])
+        o("drum_v",m[1],m[2],m[3])
       case ("c" | "d" | "e" | "f" | "g" | "a" | "b" | "r") if not drum:
         match src[pos]:
           case "#": c+="+"; pos += 1
@@ -170,7 +170,7 @@ def parse_channel(ch,src,drum):
       case "r" if drum:
         ln=readLen(c,l)
         #if ln > 256: print("invalid length"); err()
-        o("dram",0,ln)
+        o("drum",0,ln)
       case "l": l=readLen(c,l); o("l",l)
       case "v" if ptn("^([+-])",src[pos:],m):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
@@ -264,13 +264,13 @@ def mml_compile(name,chs):
                       df2 = int(G.diff)
                       if df2>0: p(PWAIT,df2); G.diff-=df2
         case ["q",q]: G.q=q
-        case ["&"]: pass #todo slar ys2_30
-        case ["|"]: pass #todo break ys2_02
-        case ["so"]: pass #todo sus on ys2_02
-        case ["v-",v]: G.volume+=v # ys2_02
-        case ["v+",v]: G.volume+=v # ys2_02
-        case ["dram",_,_]: pass #todo dram 28
-        case ["v_rhythm",_,_,_]: pass #todo v_rithym 28
+        case ["&"]: pass
+        case ["|"]: pass
+        case ["so"]: pass
+        case ["v-",v]: G.volume+=v
+        case ["v+",v]: G.volume+=v
+        case ["drum",_,_]: pass
+        case ["drum_v",_,_,_]: pass
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
