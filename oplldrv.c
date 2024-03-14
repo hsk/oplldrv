@@ -40,7 +40,9 @@ PSGDrvCh psgdrv[9];
 #define P_NO20 5
 #define P_NO30 6
 #define P_SP   7
-#define P_SIZE 9
+#define P_SLA  8
+#define P_SUS  9
+#define P_SIZE 10
 #define IX(x) x(ix)
 
 #define PDRUM   0x60
@@ -79,7 +81,9 @@ void p_exec(PSGDrvCh* ch) {
   while (1) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
-      if(!ch->sla)ym2413(ch->no20,0);
+      if (!ch->sla) {
+        ym2413(ch->no20,0);
+      }
       ch->sla=ch->sus;
       a=a+a;
       u8* iy = &((u8*)tones)[a];
@@ -126,9 +130,9 @@ void p_exec(PSGDrvCh* ch) {
                 {// dda wait
                   u8 a = *ch->pc++;
                   a += ch->sp[1];
-                  u8 e = *ch->pc++;
-                  if (e <= a) {
-                    a -= e;
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
                     ch->sp[1]=a;
                     return;
                   }
@@ -142,9 +146,9 @@ void p_exec(PSGDrvCh* ch) {
                   ch->sp-=2;
                   u8 a = *ch->pc++;
                   a += ch->sp[1];
-                  u8 e = *ch->pc++;
-                  if (e <= a) {
-                    a -= e;
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
                     ch->sp[1]=a;
                     return;
                   }
@@ -190,15 +194,18 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PKEYOFF $ jp c,12$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
-      cp #PBREAK $ jp c,9$ $ jp z,10$ $ jp 11$
+      cp #PBREAK $ jp c,9$ $ jp z,10$
+      cp #PSLAON $ jp c,11$ $ jp z,13$ $ jp 14$
     ; ) {
     3$:; case PTONE:
-      ; ym2413(0x20+ch->no,0);
       ld d,a
-      ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
-      xor a $ out (_IOPortOPLL2), a
-      ; a=a+a;
-      ld a,d $ add a,a
+      xor a $ cp IX(P_SLA) $ jp nz, 31$; if (!ch->sla) {
+        ; ym2413(ch->no20,0);
+        ld a,IX(P_NO20) $ ld c,a $ out (_IOPortOPLL1), a
+        xor a $ out (_IOPortOPLL2), a
+      31$: ; }
+      ld a,IX(P_SUS) $ ld IX(P_SLA),a ; ch->sla=ch->sus
+      ld a,d $ add a,a ; a=a+a;
       ; u8* iy = &((u8*)tones)[a];
       add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
       //ld de,#_tones $ add e $ ld e,a $ jr nc, 55$ $ inc d $ 55$:
@@ -226,6 +233,9 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
       jp 1$; break;
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
+      ; ym2413(ch->no20,0)
+      ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
+      xor a $ out	(_IOPortOPLL2), a
       jp 2$  ; return;
     8$: ; case PLOOP:
       ld e,IX(P_SP) $ ld d,IX(P_SP+1)
@@ -246,26 +256,47 @@ void p_exec(PSGDrvCh* ch) __naked {
         ld a,(hl) $ inc hl; u8 a = *ch->pc++;
         dec de $ ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
         ld e,(hl) ; u8 e = *ch->pc;
-        add hl,bc ; ch->pc += de;
+        add hl,bc ; ch->pc += bc;
         cp e $ jp c, 98$; if (e <= a) {
-          sub a,e; a -= e; ld e,IX(P_SP) $ ld (de),a; ch->sp[-1]=a;
-          
+          sub a,e; a -= e
+          ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
           ; jp 2$; return;
         98$:; }
+        ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
         jp 1$; break;
       99$:; }
+      inc hl $ inc hl                                   ; ch->pc += 2;
       ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
       ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
-      inc hl $ inc hl $ inc hl $ inc hl; ch->pc += 4;
+      inc hl $ ld a,(hl); u8 a = *ch->pc++;
+      inc de
+      ld c,a $ ld a,(de) $ add a,c; a += ch->sp[1];
+      ld c,(hl) $ inc hl; u8 c = *ch->pc++;
+      cp c $ jp c, 97$; if (c <= a) {
+        sub a,c; a -= c;
+        ld(de),a; ch->sp[1]=a;
+        jp 2$; return;
+      97$:; }
+      ld(de),a; ch->sp[1]=a;
       jp 1$; break; 
     10$: ;case PBREAK:
       ; if (*ch->sp == 1
         ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 109$
       ; ) {
-        ld e,(hl) $ inc hl $ ld d,(hl) $ dec hl; u16 de = *(u16*)ch->pc;
-        add hl,de $ add hl add hl; ch->pc += de+2;
-        ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ dec de $ dec de
-        ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
+        ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl; u16 bc = *(u16*)ch->pc;
+        add hl,bc ; ch->pc += bc;
+        dec de $ dec de $ ld IX(P_SP),e $ ld IX(P_SP+1),d; ch->sp-=2;
+        ld a,(hl) $ inc hl; u8 a = *ch->pc++;
+        inc de
+        ld c,a $ ld a,(de) $ add a, c; a += ch->sp[1];
+        ld c,(hl) $ inc hl; u8 c = *ch->pc++;
+        cp c $ jp c, 107$; if (c <= a) {
+          sub a,c; a -= c;
+          ld (de), a; ch->sp[1]=a;
+          jp 2$; return;
+        107$:; }
+        ld (de), a; ch->sp[1]=a;
+
         jp 1$; break;
       109$:; }
       inc hl $ inc hl; ch->pc+=2;
@@ -304,6 +335,13 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld a,d     $ out (_IOPortOPLL2), a
       ld a,(hl) $ inc hl $ ld IX(P_WAIT),a; ch->wait=*ch->pc++
       jp 2$  ; return;
+    13$: ; case PSLAON:
+      ld IX(P_SLA),#1; ch->sla=1;
+      jp 1$ ; break;
+    14$: ; case PSUSON:
+      ld IX(P_SUS),#1; ch->sus=1;
+      jp 1$ ; break;
+ 
     ; }
   2$:; }
   ld P_PC(ix),l $ ld P_PC+1(ix),h
