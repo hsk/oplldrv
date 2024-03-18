@@ -1,62 +1,10 @@
-#include <stdio.h>
-void main(void);
-void init(void) {main();}
+#include "oplldrv.h"
+//#define OPT 1
+//#define OPT2 1 
+//#ifdef DEVKITSMS
 
-int putchar(int c) __naked {
-	c;
-	__asm;
-	ld a,l
-	out (0), a
-end$:
-	ret
-	__endasm;
-}
-
-typedef char s8;
-typedef short s16;
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef volatile s8 vs8;
-typedef volatile s16 vs16;
-typedef volatile u8 vu8;
-typedef volatile u16 vu16;
-typedef struct PSGDrvCh {
-  u8 wait;
-  u8* pc;
-  u8 tone;
-  u8 no10;
-  u8 no20;
-  u8 no30;
-  u8* sp;
-  u8 sla;
-  u8 sus;
-} PSGDrvCh;
 u8* sound;
 PSGDrvCh psgdrv[9];
-#define P_WAIT 0
-#define P_PC   1
-#define P_TONE 3
-#define P_NO10 4
-#define P_NO20 5
-#define P_NO30 6
-#define P_SP   7
-#define P_SLA  9
-#define P_SUS  10
-#define P_SIZE 11
-#define IX(x) x(ix)
-
-#define PDRUM   0x60
-#define PKEYOFF 0x80
-#define PWAIT   0x81
-#define PVOLUME 0x82
-#define PEND    0x83
-#define PLOOP   0x84
-#define PNEXT   0x85
-#define PBREAK  0x86
-#define PSLOAD  0x87
-#define PSLAON  0x88
-#define PSUSON  0x89
-#define PDRUMV  0x8A
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -71,7 +19,75 @@ static u16 const tones[] = {
  3243, 3253, 3264, 3276, 3288, 3301, 3314, 3329, 3344, 3360, 3377, 3395,
  3755, 3765, 3776, 3788, 3800, 3813, 3826, 3841, 3856, 3872, 3889, 3907,
 };
+#ifdef DEVKITSMS
+unsigned char p_init (void) __naked {
+  __asm
 
+    // first we need to perform region detection
+    // as devkitSMS currently does NOT support that :|
+
+    ld a, #0b11110101               // Output 1s on both TH lines
+    out (#0x3f), a
+    in a, (#0xdd)
+    and #0b11000000                 // See what the TH inputs are
+    cp #0b11000000                  // If the input does not match the output then it is a Japanese system
+    jp nz, _IsJapanese
+
+    ld a, #0b01010101               // Output 0s on both TH lines
+    out (#0x3f), a
+    in a, (#0xdd)
+    and #0b11000000                 // See what the TH inputs are
+    jp nz, _IsJapanese              // If the input does not match the output then it is a Japanese system
+
+    ld a, #0b11111111               // Set everything back to being inputs
+    out (#0x3f), a
+
+    ld e, #1                        // export = 1
+    jr _getAudioCap
+
+_IsJapanese:
+    ld e, #0                        // export = 0
+
+_getAudioCap:
+    ld a, (_SMS_Port3EBIOSvalue)
+    or #0x04                        // disable I/O chip
+    out (#0x3E), a
+
+    ld bc, #0                       // reset counters
+
+_next:
+    ld a, b
+    out (#0xF2), a                  // output to the audio control port
+
+    in a, (#0xF2)                   // read back
+    and #0b00000011                 // mask to bits 0-1 only
+    cp b                            // check what is read is the same as what was written
+    jr nz, _noinc
+
+    inc c                           // c = # of times the result is the same
+
+_noinc:
+    inc b                           // increase counter
+    bit 2, b                        // repeated four times?
+    jr z, _next                     // no? then repeat again
+
+    ld a, (_SMS_Port3EBIOSvalue)
+    out (#0x3E), a                  // turn I/O chip back on
+
+    srl c                           // 4 --> 2; 3, 2 --> 1; 0, 1 --> 0
+    ld a, c
+    bit 0, c                        // check if PSG+FM (Japanese SMS) or PSG only
+    jr z, _done                     // yes? then transfer value directly
+
+    add a,e                         // else check region: if Region = 1 (Export)
+                                    // then 1 --> 2 (3rd party FM board);
+                                    // else 1 stays 1 unchanged (Mark III + FM unit)
+_done:
+    ld l, a                         // return FM type
+    ret
+  __endasm;
+}
+#endif
 #ifndef OPT
 void p_exec(PSGDrvCh* ch) {
   if (--ch->wait) {
@@ -112,6 +128,8 @@ void p_exec(PSGDrvCh* ch) {
                 if(*ch->sp) {
                   if(*ch->sp==255) {
                     (*ch->sp)++;
+                    if(ch->drum) {ym2413(0x0e,(1<<5)|0);}
+                    else {ym2413(ch->no20,0);}
                   }
                   u16 bc = *(u16*)ch->pc; ch->pc+=2;
                   // dda wait
@@ -240,7 +258,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; ym2413(ch->no20,0)
       ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
       xor a $ out	(_IOPortOPLL2), a
-      jp 2$  ; return;
+      jp 2$  ; return; (10)
     8$: ; case PLOOP:
       ld e,IX(P_SP) $ ld d,IX(P_SP+1)
       ; *(++ch->sp) = *ch->pc++
@@ -255,7 +273,16 @@ void p_exec(PSGDrvCh* ch) __naked {
         jp z, 99$
       ; ) {
         jp nc, 96$ ; if(*ch->sp==255) {
-          inc a      ; (*ch->sp)++;
+          ;inc a      ; (*ch->sp)++;
+          ld a,IX(P_DRUM) $ or a $ jp nz, 95$
+            ld a,IX(P_NO20) $ out (_IOPortOPLL1), a; ym2413(ch->no20,0)
+            xor a $ out	(_IOPortOPLL2), a
+            jp 96$
+          95$:
+            ; ym2413(0x0e,(1<<5)|0);
+            ld a,#0x0e $ out (_IOPortOPLL1), a
+            ld a,#0x20 $ out (_IOPortOPLL2), a
+            xor a
         96$:       ; }
         ld IX(P_SP),e $ ld IX(P_SP+1),d $ dec de
         ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl; u16 bc = *(u16*)ch->pc; ch->pc+=2
@@ -352,22 +379,13 @@ void p_exec(PSGDrvCh* ch) __naked {
       jp 1$ ; break;
     ; }
   2$:; }
-  ld P_PC(ix),l $ ld P_PC+1(ix),h
+  ld P_PC(ix),l $ ld P_PC+1(ix),h; (19)(19)=28
   pop ix $ ret
   __endasm;
 }
 #endif
-#include "bgm1.h"
-void wait(void) __naked {
-	__asm;
-    ld a,#0
-    out (9), a
-	ret
-	__endasm;
-}
-u8 stack[100];
 u8 track_size;
-void reset(unsigned char mode){
+void p_reset(unsigned char mode){
     ym2413(0x0e, mode<<5);
     if (mode) {
       ym2413(0x16, 0x20);// F-Num LSB for channel 7 (slots 13,16)  BD1,BD2
@@ -382,7 +400,8 @@ void reset(unsigned char mode){
     }
 }
 #ifndef OPT2
-void p_play(u8 **bs) {
+void p_play(u8 **bs,u8*stack) {
+  p_reset(((u8*)bs)[1]);
   u8* sp=stack;
   track_size = (u8)*bs++;
   sound=*bs++;
@@ -397,10 +416,12 @@ void p_play(u8 **bs) {
     sp += bs[i][0]*2;
     psgdrv[i].sla=0;
     psgdrv[i].sus=0;
+    psgdrv[i].drum= (((u8*)bs)[1] && i==6);
   }
 }
 #else
-void p_play(u8 **bs) {
+void p_play(u8 **bs,u8* stack) {
+  p_reset(((u8*)bs)[1]);
   u8* sp=stack;
   PSGDrvCh *p = psgdrv;
   track_size = (u8)*bs++;
@@ -416,6 +437,7 @@ void p_play(u8 **bs) {
     sp += bs[i][0]*2;
     p->sla=0;
     p->sus=0;
+    p->drum= (((u8*)bs)[1] && i==6);
   }
 }
 #endif
@@ -437,11 +459,3 @@ void p_update(void) {
 }
 #endif
 #endif
-void main(void) {
-  reset(((u8*)bgm1)[1]);
-  p_play(bgm1);
-  for (u16 a=0;a<60*60;a++) {
-    wait();
-    p_update();
-  }
-}
