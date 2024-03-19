@@ -381,7 +381,8 @@ def mml_compile(name,chs):
       v = ch[vi]; vi += 1; cmd_compile(n,v)
     p(PEND)
     G.r.insert(0,f"{G.stackMax}")
-    print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {','.join(G.r)}}};")
+    split=",\n  "
+    print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {split.join(G.r)}}};")
     G.all_len += len(G.r)
     print(f"{n} all {G.all} {G.all2}",file=sys.stderr)
     
