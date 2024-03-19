@@ -416,7 +416,7 @@ void p_play(u8 **bs,u8*stack) {
     sp += bs[i][0]*2;
     psgdrv[i].sla=0;
     psgdrv[i].sus=0;
-    psgdrv[i].drum= (((u8*)bs)[1] && i==6);
+    psgdrv[i].drum= (((u8*)bs)[-3]!=0 && i==6);
   }
 }
 #else
@@ -437,7 +437,7 @@ void p_play(u8 **bs,u8* stack) {
     sp += bs[i][0]*2;
     p->sla=0;
     p->sus=0;
-    p->drum= (((u8*)bs)[1] && i==6);
+    p->drum= (((u8*)bs)[-3]!=0 && i==6);
   }
 }
 #endif
