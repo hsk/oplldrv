@@ -335,7 +335,7 @@ def mml_compile(name,chs):
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
         case ["["]:   
-                      diff = max(0,G.all2-G.all)
+                      diff = max(0,G.all2-G.all) #+0.00000001
                       G.all+=diff
                       G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff])
                       G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)

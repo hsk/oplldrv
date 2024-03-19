@@ -2,9 +2,9 @@ t:
 	make build -e "SRC=spehari"
 build:
 	@echo $(OPTION)
-	@python mmlc.py res/$(SRC).mml bgm1 > bgm1.h
+	@python mmlc.py res/$(SRC).mml bgm1 > data/$(SRC).h
 	@sdcc -mz80 $(OPTION) oplldrv.c --opt-code-speed -c
-	@sdcc -mz80 $(OPTION) main.c oplldrv.rel --opt-code-speed --no-std-crt0 -o a.ihx
+	@sdcc -mz80 $(OPTION) -D SRC=\"data/$(SRC).h\" main.c oplldrv.rel --opt-code-speed --no-std-crt0 -o a.ihx
 	@../../ihx2bin a.ihx -o a.bin
 	@../../6448 a.bin > result
 	@open opll.wav

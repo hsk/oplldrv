@@ -10,7 +10,7 @@ int putchar(int c) __naked {
 	ret
 	__endasm;
 }
-#include "bgm1.h"
+#include SRC
 void wait(void) __naked {
 	__asm;
     ld a,#0
