@@ -1,0 +1,22 @@
+;[gain=1.0;name=ys2_18]
+#opll_mode 1
+#tempo 96; 95.7
+#title { "SUBTERRANEAN CANAL"}
+
+@v15 = { ; Hard Brass
+;       TL FB
+        24, 7,
+; AR DR SL RR KL MT AM VB EG KR DT
+   7, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+  11, 5, 1, 1, 0, 1, 0, 0, 0, 0, 0 }
+
+*0={@9o5v13}
+*1={@15o4v13}
+*2={@6o5v12}
+
+A l8 [
+A   [*0 r12d12e12f12a12>c12e6d3|<b6g6a2&a12& l96b&>c&d&e&f&g&a&al8 a%128]2 
+A   f6g6e%128
+
+A r1 r1 r1 r1 r1 
+A ]0

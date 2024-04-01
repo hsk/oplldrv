@@ -1,0 +1,15 @@
+@v15 = { ; Violin
+;       TL FB
+        30, 7,
+; AR DR SL RR KL MT AM VB EG KR DT
+   7, 5, 2, 0, 1,10, 0, 0, 1, 0, 0,
+   8, 0, 0, 1, 0, 2, 0, 0, 0, 0, 1 }
+@v22 = { ; B.D
+;       TL FB
+        12, 7,
+; AR DR SL RR KL MT AM VB EG KR DT
+  12, 0, 0,10, 0, 1, 0, 0, 0, 0, 0,
+  15, 7, 5, 6, 0, 1, 0, 0, 0, 0, 0 }
+
+#tempo 120
+A o5 v15 a b @22 a b @15 a b r1

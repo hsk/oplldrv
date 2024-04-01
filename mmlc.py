@@ -351,8 +351,11 @@ def mml_compile(name,chs):
                       G.all-=diff
                       diff=G.all2-G.all
                       diff1=int(diff)
-                      p(diff1,n1)
                       G.all+=diff1
+                      if len(G.stack) == 0:
+                        G.all = int(G.all+0.00000001)
+                        diff1 = int(diff+0.00000001)
+                      p(diff1,n1)
                       print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
                       #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if br: # ブレイクアドレス

@@ -750,7 +750,7 @@ u8 const bgm1_0[730]={
   PNEXT,
   194,
   253,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_1[730]={
@@ -1481,7 +1481,7 @@ u8 const bgm1_1[730]={
   PNEXT,
   194,
   253,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_2[621]={
@@ -2103,7 +2103,7 @@ u8 const bgm1_2[621]={
   PNEXT,
   214,
   253,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_3[567]={
@@ -2671,7 +2671,7 @@ u8 const bgm1_3[567]={
   PNEXT,
   67,
   254,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_4[596]={
@@ -2779,7 +2779,7 @@ u8 const bgm1_4[596]={
   PNEXT,
   245,
   255,
-  2,
+  3,
   8,
   PVOLUME,
   82,
@@ -3268,7 +3268,7 @@ u8 const bgm1_4[596]={
   PNEXT,
   73,
   254,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_5[510]={
@@ -3779,7 +3779,7 @@ u8 const bgm1_5[510]={
   PNEXT,
   96,
   254,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_6[255]={
@@ -4035,7 +4035,7 @@ u8 const bgm1_6[255]={
   PNEXT,
   31,
   255,
-  0,
+  1,
   0,
   PEND};
 u8 const bgm1_7[2]={

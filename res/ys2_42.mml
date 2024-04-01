@@ -1,0 +1,8 @@
+;[gain=1.0;name=ys2_07]
+#opll_mode 1
+#tempo 77 ; 77.5
+#title {"RUINS OF MOONDORIA"}
+  
+
+ ; デデデでででんでん
+C l8 v14 @2q2 o5 [cdef]0
