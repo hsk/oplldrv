@@ -4045,3 +4045,4 @@ u8 const bgm1_8[2]={
   0,
   PEND};
 u8* const bgm1[]={(u8*)265,bgm1_sound,bgm1_0,bgm1_1,bgm1_2,bgm1_3,bgm1_4,bgm1_5,bgm1_6,bgm1_7,bgm1_8,};
+#define bgm1_frames 4456

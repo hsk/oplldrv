@@ -1,0 +1,17 @@
+# bin/ のソースから make で作る
+/6448
+/ihx2bin
+# ビルドの途中でできるもの
+*.ihx
+*.lk
+*.noi
+*.lst
+*.map
+*.sym
+*.rel
+*.bin
+*.asm
+# 実行結果
+/result
+*.wav
+*.mp4

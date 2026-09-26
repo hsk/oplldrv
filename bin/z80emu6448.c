@@ -53,7 +53,7 @@ static void chunkID(char *buf, char id[4]) {
   buf[3] = id[3];
 }
 void wav_header(FILE* fp) {
-  char header[46];
+  char header[44];
   #define DATALENGTH 0
   chunkID(header, "RIFF");
   DWORD(header + 4, DATALENGTH * 2 + 36);
@@ -68,16 +68,16 @@ void wav_header(FILE* fp) {
   WORD(header + 34, 16);              /* bitsPerSample */
   chunkID(header + 36, "data");
   DWORD(header + 40, 2 * DATALENGTH);
-  fwrite(header,46,1,fp);
+  fwrite(header,44,1,fp);
 }
 void wav_close(FILE* fp) {
 	char dt[4];
-	u32 len = ftell(fp);
+	u32 len = ftell(fp) - 44; // data チャンクのバイト数
 	fseek(fp,4,SEEK_SET);
-	DWORD(dt,len*2+36);
+	DWORD(dt,len+36);
 	fwrite(dt,4,1,fp);
 	fseek(fp,40,SEEK_SET);
-	DWORD(dt,len*2);
+	DWORD(dt,len);
 	fwrite(dt,4,1,fp);
 	fseek(fp,0,SEEK_END);
 	fclose(fp);

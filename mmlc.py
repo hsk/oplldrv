@@ -1,4 +1,4 @@
-import re,sys
+import re,sys,math
 
 def read_all(filename):
   fp = open(filename, "r")
@@ -256,11 +256,11 @@ def loop_expand(chs):
   print(f"loop expand {G.before}+{G.after} to {G.before+G.after}commands +{G.after/G.before*100:0.2f}%",file=sys.stderr)
   return r
 
-def mml_compile(name,chs):
+def mml_compile(name,chs,loops=2):
   print(chs)
   print("*/")
   class G:pass
-  G.tempos={}; G.all_len = 0; G.sounds={}; G.n2i={}; G.i2n={}
+  G.tempos={}; G.all_len = 0; G.sounds={}; G.n2i={}; G.i2n={}; G.frames=0
   if len(chs["@"].keys())>0:
     ch = []; i = 0
     for k,ss in chs["@"].items(): ch.extend(map(str,ss));G.sounds[k]=i;i+=1
@@ -273,6 +273,7 @@ def mml_compile(name,chs):
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False
+    G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
@@ -358,6 +359,7 @@ def mml_compile(name,chs):
                       p(diff1,n1)
                       print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
                       #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
+                      if len(G.stack) == 0 and n1 == 0: G.intro = al
                       if br: # ブレイクアドレス
                         pos = len(G.r) - br - 2
                         G.r[br  ]= f"{pos&255}"
@@ -388,6 +390,9 @@ def mml_compile(name,chs):
     print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {split.join(G.r)}}};")
     G.all_len += len(G.r)
     print(f"{n} all {G.all} {G.all2}",file=sys.stderr)
+    # 演奏時間: 無限ループならイントロ + 本体 x loops、なければ最後まで
+    frames = G.all if G.intro is None else G.intro + (G.all-G.intro)*loops
+    G.frames = max(G.frames, math.ceil(frames))
     
   d = list(map(lambda i:f'{name}_{i},',range(i+1)))
   if "F" in G.n2i and G.n2i["F"]!=6:
@@ -395,12 +400,16 @@ def mml_compile(name,chs):
   d.insert(0,f"(u8*){len(d)|(chs['#']['opll_mode']<<8)},")
   d.insert(1, "NULL," if len(chs["@"].keys())==0 else f"{name}_sound,")
   print(f"u8* const {name}[]={{{''.join(d)}}};")
+  print(f"#define {name}_frames {G.frames}")
+  print(f"frames {G.frames} ({G.frames/60:.2f}sec.)",file=sys.stderr)
+  if G.frames > 65000: print(f"error: frames {G.frames} > 65000",file=sys.stderr); sys.exit(1)
   G.all_len += 2*4
   print(f"data size {G.all_len}bytes.",file=sys.stderr)
 
 def main():
   print("/*")
   str = read_all(sys.argv[1])
-  mml_compile(sys.argv[2],loop_expand(parse(str)))
+  loops = int(sys.argv[3]) if len(sys.argv) > 3 else 2
+  mml_compile(sys.argv[2],loop_expand(parse(str)),loops)
 
 main()
