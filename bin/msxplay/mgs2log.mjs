@@ -10,7 +10,7 @@
 // 出力: 1 行 1 書き込み
 //   <フレーム番号> opll <レジスタ> <値>
 //   <フレーム番号> psg <レジスタ> <値>
-// フレーム番号 = VGM のサンプル数 / FRAME。libkss は MGSDRV を 59.94Hz で割り込ませるので、
+// フレーム番号 = 割り込みのまとまりの先頭のサンプル数 / FRAME。libkss は MGSDRV を 59.94Hz で割り込ませるので、
 // 1 フレームは 735 サンプル (60Hz) ではなく約 735.77 サンプル。735 で割ると 1000 フレームに 1 フレームずつずれる
 // (VGM の書き込みの時刻から測った値)
 import fs from 'fs';
@@ -49,7 +49,15 @@ const v = new DataView(vgm.buffer, vgm.byteOffset, vgm.byteLength);
 let pos = v.getUint32(0x34, true) ? 0x34 + v.getUint32(0x34, true) : 0x40;
 let samples = 0;
 const out = [];
-const log = (chip, a, d) => out.push(`${Math.floor(samples / FRAME)} ${chip} ${a} ${d}`);
+// 1 回の割り込みの書き込みは数十サンプルに散らばるので、サンプル数をそのまま FRAME で割ると
+// フレームの境目をまたいで 2 つのフレームに分かれることがある。間が 300 サンプル以上空いたら
+// 次の割り込みとみなし、まとまりの先頭の時刻でフレーム番号を付ける
+let last = -1e9, frame = 0;
+const log = (chip, a, d) => {
+  if (samples - last > 300) frame = Math.round(samples / FRAME);
+  last = samples;
+  out.push(`${frame} ${chip} ${a} ${d}`);
+};
 loop: while (pos < vgm.length) {
   const c = vgm[pos];
   switch (true) {
