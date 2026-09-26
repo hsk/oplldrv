@@ -313,7 +313,10 @@ def mml_compile(name,chs,loops=2):
       match v:
         case ["tone","r",a]:
                       outvolume()
-                      outwait("r",PWAIT,PWAIT,a/192)
+                      # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
+                      # 0x26〜0x28 がリズムの音程なので書かない
+                      if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,a/192)
+                      else: outwait("r",PKEYOFF,PWAIT,a/192)
         case ["v",b] if name=="F":
                       for k in G.drum_v.keys(): G.drum_v[k]=b
         case ["v",b]: G.volume=(15-b)
