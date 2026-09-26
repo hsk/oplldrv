@@ -4,18 +4,21 @@
 //
 // 使い方:
 //   node bin/msxplay/mgs2log.mjs res/ys2_01.mml --frames 6673 > ys2_01.mgs.log
-//     --frames N  N フレーム (1/60 秒) 鳴らす (標準 3600)
+//     --frames N  N フレーム (MGSDRV の割り込み N 回) 鳴らす (標準 3600)
 //     --wav FILE  WAV も書き出す
 //
 // 出力: 1 行 1 書き込み
 //   <フレーム番号> opll <レジスタ> <値>
 //   <フレーム番号> psg <レジスタ> <値>
-// フレーム番号 = VGM のサンプル数 / 735 (44100Hz の 1/60 秒)
+// フレーム番号 = VGM のサンプル数 / FRAME。libkss は MGSDRV を 59.94Hz で割り込ませるので、
+// 1 フレームは 735 サンプル (60Hz) ではなく約 735.77 サンプル。735 で割ると 1000 フレームに 1 フレームずつずれる
+// (VGM の書き込みの時刻から測った値)
 import fs from 'fs';
 import mgsc from 'mgsc-js';
 import { KSS, KSSPlay } from 'libkss-js';
 
 const { MGSC, decodeText } = mgsc;
+const FRAME = 735.77;
 
 const opt = { frames: 3600 };
 const argv = process.argv.slice(2);
@@ -39,14 +42,14 @@ if (!result.success) {
 
 await KSSPlay.initialize();
 const kss = KSS.createUniqueInstance(result.mgs, opt.input.replace(/\.mml$/i, '.mgs'));
-const vgm = await kss.toVGMAsync({ duration: Math.ceil(opt.frames * 1000 / 60), loop: 256 });
+const vgm = await kss.toVGMAsync({ duration: Math.ceil(opt.frames * FRAME * 1000 / 44100), loop: 256 });
 
 // --- VGM を読んで、書き込みをフレーム番号付きで出す
 const v = new DataView(vgm.buffer, vgm.byteOffset, vgm.byteLength);
 let pos = v.getUint32(0x34, true) ? 0x34 + v.getUint32(0x34, true) : 0x40;
 let samples = 0;
 const out = [];
-const log = (chip, a, d) => out.push(`${Math.floor(samples / 735)} ${chip} ${a} ${d}`);
+const log = (chip, a, d) => out.push(`${Math.floor(samples / FRAME)} ${chip} ${a} ${d}`);
 loop: while (pos < vgm.length) {
   const c = vgm[pos];
   switch (true) {
@@ -74,7 +77,7 @@ if (opt.wav) {
   player.setData(kss);
   player.setDeviceQuality({ psg: 1, scc: 1, opll: 1, opl: 1 });
   player.reset(null);
-  const pcm = player.calc(Math.ceil(opt.frames * RATE / 60));
+  const pcm = player.calc(Math.ceil(opt.frames * FRAME));
   player.release();
   const h = Buffer.alloc(44);
   h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length * 2, 4); h.write('WAVE', 8);

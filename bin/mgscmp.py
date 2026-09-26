@@ -7,11 +7,13 @@
     *.mgs.log   : bin/msxplay/mgs2log.mjs の出力。「フレーム opll レジスタ 値」の行
     -v          : 食い違った音符を全部出す (標準は各チャンネル最初の数個)
 
+音符の対応は、MGSDRV の音符の順に、同じ音名・スラーで開始が近い (直前のずれ ±64 フレーム) oplldrv の音符を探して取る。
+見つからなければ、開始が 2 フレーム以内の音符と「音名・スラー違い」として対応させる。
+
 書き込みの順番や回数はドライバによって違うので、書き込みをそのまま比べない。
 フレームごとにレジスタの状態を再現し、チャンネルごとの音符 (キーオンからキーオフまで) と
 リズムの打鍵にしてから比べる。
 """
-import difflib
 import math
 import sys
 from collections import Counter
@@ -137,6 +139,36 @@ def events(writes, end_frame):
     return notes, drums
 
 
+def match(A, B, key, start, window=64):
+    """A (oplldrv) と B (MGSDRV) の対応を取る。B の順に、同じ key で開始が近い A を探す。
+    近さは直前に対応したもののずれを基準にするので、ずれが少しずつ増えても追いかけられる。
+    difflib だと、繰り返しの多い曲でループ 1 周分ずれた位置と対応させてしまうことがある
+    戻り値: (対応した (a, b) のリスト, 対応しなかった A, 対応しなかった B)"""
+    pairs = []
+    used = set()
+    i = 0
+    drift = 0
+    for b in B:
+        expect = start(b) + drift
+        best = None
+        k = i
+        while k < len(A) and start(A[k]) <= expect + window:
+            if k not in used and key(A[k]) == key(b) and abs(start(A[k]) - expect) <= window:
+                if best is None or abs(start(A[k]) - expect) < abs(start(A[best]) - expect):
+                    best = k
+            k += 1
+        if best is not None:
+            pairs.append((A[best], b))
+            used.add(best)
+            drift = start(A[best]) - start(b)
+            while i in used:
+                i += 1
+    ua = [a for k, a in enumerate(A) if k not in used]
+    ub_set = {id(b) for a, b in pairs}
+    ub = [b for b in B if id(b) not in ub_set]
+    return pairs, ua, ub
+
+
 def compare(name, a_path, b_path, verbose=False):
     aw, a_end = read_oplldrv(a_path)
     bw, b_end = read_mgs(b_path)
@@ -152,14 +184,9 @@ def compare(name, a_path, b_path, verbose=False):
         A, B = an[ch], bn[ch]
         if not A and not B:
             continue
-        sm = difflib.SequenceMatcher(None, [n.key() for n in A], [n.key() for n in B], autojunk=False)
-        pairs = [(A[i + k], B[j + k]) for i, j, n in sm.get_matching_blocks() for k in range(n)]
-        # 音名が違うものも、同じ個数が入れ替わっているときは対応させる
-        pitch_ng = []
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == 'replace' and i2 - i1 == j2 - j1:
-                for a, b in zip(A[i1:i2], B[j1:j2]):
-                    pitch_ng.append((a, b))
+        pairs, ua, ub = match(A, B, lambda n: n.key(), lambda n: n.start)
+        # 対応しなかったもののうち、開始がほぼ同じ (2 フレーム以内) ものは、音名かスラーが違うものとして対応させる
+        pitch_ng, ua, ub = match(ua, ub, lambda n: 0, lambda n: n.start, window=2)
         pairs_all = sorted(pairs + pitch_ng, key=lambda p: p[1].start)
         fnum_ng = Counter((a.name(), a.fnum, b.fnum) for a, b in pairs if (a.block, a.fnum) != (b.block, b.fnum))
         dt = [a.start - b.start for a, b in pairs_all]
@@ -178,33 +205,26 @@ def compare(name, a_path, b_path, verbose=False):
         total.update(notes_a=len(A), notes_b=len(B), match=len(pairs), pitch=len(pitch_ng),
                      fnum=sum(fnum_ng.values()),
                      hang=len(hang), long=len(long_), inst=len(inst_ng))
-        print(f'  ch{ch}: 音符 {len(A)}/{len(B)} 一致 {len(pairs)} 音名違い {len(pitch_ng)} '
+        print(f'  ch{ch}: 音符 {len(A)}/{len(B)} 一致 {len(pairs)} 音名・スラー違い {len(pitch_ng)} '
               f'対応なし {unmatched_a}/{unmatched_b} | '
               f'開始のずれ {min(dt, default=0)}..{max(dt, default=0)} 最後 {dt[-1] if dt else 0} | '
               f'長さの差 {min(dlen, default=0)}..{max(dlen, default=0)} | '
               f'F-Number違い {sum(fnum_ng.values())} 平均 {cmean:+.1f} セント | 音色音量違い {len(inst_ng)} | '
               f'鳴りっぱなし {len(hang)} 長すぎ(8フレーム以上) {len(long_)}')
         lim = None if verbose else 3
-        for label, lst in (('音名違い', pitch_ng), ('音色音量違い', inst_ng),
+        for label, lst in (('音名・スラー違い', pitch_ng), ('音色音量違い', inst_ng),
                            ('鳴りっぱなし', hang), ('長すぎ', long_)):
             for a, b in lst[:lim]:
                 print(f'      {label}: oplldrv {a.start}-{a.end} {a.name()} blk{a.block} fn{a.fnum} '
                       f'@{a.inst} v{a.vol} sus{a.sus}{" &" if a.legato else ""} / '
                       f'MGSDRV {b.start}-{b.end} {b.name()} blk{b.block} fn{b.fnum} '
                       f'@{b.inst} v{b.vol} sus{b.sus}{" &" if b.legato else ""}')
-        if unmatched_a or unmatched_b:
-            for tag, i1, i2, j1, j2 in sm.get_opcodes():
-                if tag in ('insert', 'delete') or (tag == 'replace' and i2 - i1 != j2 - j1):
-                    a = A[i1] if i1 < i2 else None
-                    b = B[j1] if j1 < j2 else None
-                    print(f'      対応なし: oplldrv {i2 - i1} 個 '
-                          f'{"" if a is None else f"({a.start} {a.name()}...)"} / MGSDRV {j2 - j1} 個 '
-                          f'{"" if b is None else f"({b.start} {b.name()}...)"}')
-                    if not verbose:
-                        break
+        for a in ua[:lim]:
+            print(f'      対応なし: oplldrv {a.start}-{a.end} {a.name()}{" &" if a.legato else ""}')
+        for b in ub[:lim]:
+            print(f'      対応なし: MGSDRV {b.start}-{b.end} {b.name()}{" &" if b.legato else ""}')
     if ad or bd:
-        sm = difflib.SequenceMatcher(None, [d[1] for d in ad], [d[1] for d in bd], autojunk=False)
-        pairs = [(ad[i + k], bd[j + k]) for i, j, n in sm.get_matching_blocks() for k in range(n)]
+        pairs, _, _ = match(ad, bd, lambda d: d[1], lambda d: d[0])
         dt = [a[0] - b[0] for a, b in pairs]
         vol_ng = [(a, b) for a, b in pairs if a[2] != b[2]]
         pitch_ng = [(a, b) for a, b in pairs if a[3] != b[3]]
@@ -224,7 +244,7 @@ def compare(name, a_path, b_path, verbose=False):
             f'{n}:{a}/{b}x{c}' for (n, a, b), c in sorted(fnums.items(), key=lambda x: -x[1])[:12]))
     n = max(total['notes_b'], 1)
     print(f'  合計: 音符一致 {total["match"]}/{total["notes_b"]} ({total["match"] * 100 / n:.1f}%) '
-          f'音名違い {total["pitch"]} F-Number違い {total["fnum"]} 音色音量違い {total["inst"]} '
+          f'音名・スラー違い {total["pitch"]} F-Number違い {total["fnum"]} 音色音量違い {total["inst"]} '
           f'鳴りっぱなし {total["hang"]} 長すぎ {total["long"]}'
           + (f' リズム一致 {total["drum_match"]}/{total["drum_b"]} 音量違い {total["drum_vol"]}'
              f' 音程レジスタ違い {total["drum_pitch"]}'
