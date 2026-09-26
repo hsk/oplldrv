@@ -226,10 +226,10 @@ def loop_expand(chs):
           case ["o",n]: G.octave=n-1
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
-          case ["["]: stack.append([len(r),None,G.volume,G.octave])
-          case ["|"]: stack[-1][1]=len(r)
+          case ["["]: stack.append([len(r),None,G.volume,G.octave,None])
+          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave)
           case ["]",n]:
-            [start,br,vol,octave]= stack.pop()
+            [start,br,vol,octave,brstate]= stack.pop()
             if br == None: br=len(r)
             G.octave=octave
             if (G.volume != vol or G.octave != octave) and n!=0: # 状態が違うので展開する
@@ -247,6 +247,8 @@ def loop_expand(chs):
               after=len(r)
               G.after += after-before
               continue
+            # 展開しないループで | があれば、ループのあとは | の時点の状態になる
+            if brstate: G.volume,G.octave = brstate
       r.append(v)
     return r
   r = {}
@@ -341,12 +343,12 @@ def mml_compile(name,chs,loops=2):
         case ["["]:   
                       diff = max(0,G.all2-G.all) #+0.00000001
                       G.all+=diff
-                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff])
+                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff,None])
                       G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
         case ["]",n]: # n回ループする
                       n1=n
                       if n<2:n=1
-                      [l,al,al2,br,bral,bral2,diff]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
+                      [l,al,al2,br,bral,bral2,diff,brstate]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
                       p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
                       n-=1
                       if br: n-=1
@@ -364,6 +366,8 @@ def mml_compile(name,chs,loops=2):
                       #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if len(G.stack) == 0 and n1 == 0: G.intro = al
                       if br: # ブレイクアドレス
+                        # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
+                        G.o,G.volume,G.old_volume,G.at,G.q = brstate
                         pos = len(G.r) - br - 2
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
@@ -377,6 +381,7 @@ def mml_compile(name,chs,loops=2):
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
+                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q)
                       p(PBREAK,None,None)
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
         case ["drum_v",a,"+",n]: G.drum_v[a]+=int(n)
