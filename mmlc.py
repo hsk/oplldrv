@@ -368,8 +368,9 @@ def mml_compile(name,chs,loops=2):
                         G.r[br  ]= f"{pos&255}"
                         G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
-        case ["v-",v]:G.volume+=v
-        case ["v+",v]:G.volume+=v
+        # ( で音量を下げ、) で上げる。G.volume は減衰 (15-音量) なので逆向きに足し、0〜15 に収める
+        case ["v-",v]:G.volume=min(15,max(0,G.volume-v))
+        case ["v+",v]:G.volume=min(15,max(0,G.volume-v))
         case ["|"]:
                       #print("|",file=sys.stderr)
                       if G.stack[-1][3] != None: print("error arleady use |")
