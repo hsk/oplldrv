@@ -291,6 +291,7 @@ def mml_compile(name,chs,loops=2):
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
+    G.drum_rv=15 # リズムの ( ) の基準になる音量。v と vb などで最後に指定した値 (MGSDRV と同じ)
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
     def outvolume():
@@ -336,6 +337,11 @@ def mml_compile(name,chs,loops=2):
                       else: outwait("r",PKEYOFF,PWAIT,a/192)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
+                      G.drum_rv=b
+        case ["v-"|"v+",v] if name=="F" and chs["#"]["opll_mode"]:
+                      # リズムの ( ) は基準の音量を変えて、全部の楽器をその音量にする
+                      G.drum_rv=min(15,max(0,G.drum_rv+v))
+                      for k in G.drum_v.keys(): G.drum_v[k]=G.drum_rv
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
@@ -401,7 +407,7 @@ def mml_compile(name,chs,loops=2):
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
         case ["drum_v",a,"+",n]: G.drum_v[a]+=int(n)
         case ["drum_v",a,"-",n]: G.drum_v[a]-=int(n)
-        case ["drum_v",a,"",n]: G.drum_v[a]=int(n)
+        case ["drum_v",a,"",n]: G.drum_v[a]=int(n); G.drum_rv=int(n)
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
         case v:       print(f"unknown {v}")
