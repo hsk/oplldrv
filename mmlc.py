@@ -467,6 +467,14 @@ def mml_compile(name,chs,loops=2):
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
         case ["["]:   
+                      # 本体で音色や音量を変えるなら、2 周目の入口の音色・音量は 1 周目の終わりのものになるので、
+                      # 直前に出した音色・音量を忘れて、本体の最初の音で必ず PVOLUME を出す
+                      d=0; j=vi
+                      while j < len(ch) and not (ch[j][0]=="]" and d==0):
+                        if ch[j][0]=="[": d+=1
+                        elif ch[j][0]=="]": d-=1
+                        elif ch[j][0] in ("@","v","v-","v+"): G.old_volume=-1
+                        j+=1
                       diff = max(0,G.all2-G.all) #+0.00000001
                       G.all+=diff
                       G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff,None])
