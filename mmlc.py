@@ -116,14 +116,16 @@ def parse_channel(ch,src,drum):
     def vlen():
       nonlocal src,pos; r=[]
       if ptn("^[0-9]+",src[pos:],r):
-          pos += len(r[0]); return 0 if r[0]=="0" else 192/int(r[0])
+          # 長さは整数の tick (全音符 = 192) に切り捨てる (MGSDRV と同じ。c129 は 1 tick)
+          pos += len(r[0]); return 0 if r[0]=="0" else 192//int(r[0])
       if ptn("^%[0-9]+",src[pos:],r):pos += len(r[0]); return int(r[0][1:])
       return None
     def vlen2():
       nonlocal src,pos
       l = vlen()
       if l == None: return None
-      while src[pos]==".": pos+=1; l*=1.5
+      d = l
+      while src[pos]==".": pos+=1; d//=2; l+=d # 付点は直前に足した長さの半分 (切り捨て)
       return l
     nonlocal src,pos; spos = pos
     l = vlen2()
