@@ -317,7 +317,7 @@ def mml_compile(name,chs,loops=2):
                       # 0x26〜0x28 がリズムの音程なので書かない
                       if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,a/192)
                       else: outwait("r",PKEYOFF,PWAIT,a/192)
-        case ["v",b] if name=="F":
+        case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
