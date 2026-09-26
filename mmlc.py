@@ -19,6 +19,8 @@ PSLOAD="PSLOAD"
 PSLAON="PSLAON"
 PSUSON="PSUSON"
 PDRUMV="PDRUMV"
+PNEXTS="PNEXTS"
+PBREAKS="PBREAKS"
 def ptn(p,s,m):
   v = re.match(p,s)
   if v==None: m[:]=[""]; return False
@@ -483,7 +485,14 @@ def mml_compile(name,chs,loops=2):
                       n1=n
                       if n<2:n=1
                       [l,al,al2,br,bral,bral2,diff,brstate]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
-                      p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
+                      # ブレイクの飛び先 (PNEXT の dda の位置) が 255 バイト以内なら 1 バイトの PBREAKS にする。
+                      # PNEXT を長い形 (飛び先の dda が len+3) にしたときの距離で決める。短くなれば距離も縮むので収まる
+                      short_br = br is not None and len(G.r)+2-br <= 255
+                      if short_br: G.r[br-1]=PBREAKS; del G.r[br+1]
+                      # ループの頭へ戻る距離が -128 以上なら 1 バイトの PNEXTS にする
+                      off = l-len(G.r)
+                      if off >= -128: p(PNEXTS, off&255)
+                      else: p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
                       n-=1
                       if br: n-=1
                       G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
@@ -503,8 +512,10 @@ def mml_compile(name,chs,loops=2):
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
                         G.o,G.volume,G.old_volume,G.at,G.q = brstate
                         pos = len(G.r) - br - 2
-                        G.r[br  ]= f"{pos&255}"
-                        G.r[br+1]= f"{pos>>8}"
+                        if short_br: G.r[br]= f"{pos}"
+                        else:
+                          G.r[br  ]= f"{pos&255}"
+                          G.r[br+1]= f"{pos>>8}"
         case ["q",q]: G.q=q
         # ( で音量を下げ、) で上げる。G.volume は減衰 (15-音量) なので逆向きに足し、0〜15 に収める
         case ["v-",v]:G.volume=min(15,max(0,G.volume-v))

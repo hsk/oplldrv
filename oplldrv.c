@@ -91,6 +91,7 @@ _done:
 #endif
 #ifndef OPT
 void p_exec(PSGDrvCh* ch) {
+  u16 bc;
   if (--ch->wait) {
     return;
   }
@@ -125,14 +126,15 @@ void p_exec(PSGDrvCh* ch) {
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
     case PEND:  ch->pc--; ch->wait=0;ym2413(ch->no20,0); return;
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
-    case PNEXT: (*ch->sp)--;
+    case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext; // 飛び先が近いときの 1 バイトの形
+    case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
+    pnext:      (*ch->sp)--;
                 if(*ch->sp) {
                   if(*ch->sp==255) {
                     (*ch->sp)++;
                     if(ch->drum) {ym2413(0x0e,(1<<5)|0);}
                     else {ym2413(ch->no20,0);}
                   }
-                  u16 bc = *(u16*)ch->pc; ch->pc+=2;
                   // dda wait
                   u8 a = *ch->pc++;
                   a += ch->sp[-1];
@@ -146,7 +148,6 @@ void p_exec(PSGDrvCh* ch) {
                   ch->sp[-1]=a;
                   break;
                 }
-                ch->pc += 2;
                 ch->sp-=2;
                 {// dda wait
                   u8 a = *ch->pc++;
@@ -160,9 +161,12 @@ void p_exec(PSGDrvCh* ch) {
                   ch->sp[1]=a;
                 }
                 break; 
+    case PBREAKS:if (*ch->sp == 1) { bc = *ch->pc; goto pbreak; } // 飛び先が近いときの 1 バイトの形
+                ch->pc+=1;
+                break;
     case PBREAK:if (*ch->sp == 1) {
-                  u16 bc = *(u16*)ch->pc;
-                  ch->pc += bc;
+                  bc = *(u16*)ch->pc;
+    pbreak:       ch->pc += bc;
                   // add dda
                   ch->sp-=2;
                   u8 a = *ch->pc++;
@@ -215,9 +219,10 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PKEYOFF $ jp c,12$ $ jp z,4$
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
+      cp #PBREAKS $ jp c,16$ $ jp z,17$
+      cp #PDRUMV $ jp c,13$ $ jp z,15$
       cp #PBREAK $ jp c,9$ $ jp z,10$
-      cp #PSLAON $ jp c,11$ $ jp z,13$
-      cp #PDRUMV $ jp c,14$ $ jp 15$
+      cp #PSUSON $ jp c,11$ $ jp 14$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -268,7 +273,12 @@ void p_exec(PSGDrvCh* ch) __naked {
       inc de $ ld a,(hl) $ inc hl $ ld (de), a
       ld IX(P_SP),e $ ld IX(P_SP+1),d
       jp 1$; break;
+    16$: ;case PNEXTS:
+      ld a,(hl) $ inc hl $ ld c,a $ rla $ sbc a,a $ ld b,a ; bc = (s8)*ch->pc++;
+      jp 90$
     9$: ;case PNEXT:
+      ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl; u16 bc = *(u16*)ch->pc; ch->pc+=2
+    90$:
       ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ ld (de), a; (*ch->sp)--;
       ; if(*ch->sp
         jp z, 99$
@@ -287,7 +297,6 @@ void p_exec(PSGDrvCh* ch) __naked {
             xor a
         96$:       ; }
         ld IX(P_SP),e $ ld IX(P_SP+1),d $ dec de
-        ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl; u16 bc = *(u16*)ch->pc; ch->pc+=2
         // dda wait
         ld a,(hl) $ inc hl; u8 a = *ch->pc++;
         ex de,hl $ add a,(hl) $ ex de,hl; a += ch->sp[-1];
@@ -301,7 +310,6 @@ void p_exec(PSGDrvCh* ch) __naked {
         ld e,IX(P_SP) $ dec e $ ld (de),a; ch->sp[-1]=a;
         jp 1$; break;
       99$:; }
-      inc hl $ inc hl                                   ; ch->pc += 2;
       dec de $ dec de $ ld IX(P_SP),e $ ld IX(P_SP+1),d ; ch->sp-=2;
       ld a,(hl) $ inc hl; u8 a = *ch->pc++;
       inc de
@@ -319,6 +327,7 @@ void p_exec(PSGDrvCh* ch) __naked {
         ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 109$
       ; ) {
         ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl; u16 bc = *(u16*)ch->pc;
+      101$:
         add hl,bc ; ch->pc += bc;
         dec de $ dec de $ ld IX(P_SP),e $ ld IX(P_SP+1),d; ch->sp-=2;
         ld a,(hl) $ inc hl; u8 a = *ch->pc++;
@@ -334,6 +343,13 @@ void p_exec(PSGDrvCh* ch) __naked {
         jp 1$; break;
       109$:; }
       inc hl $ inc hl; ch->pc+=2;
+      jp 1$; break;
+    17$: ;case PBREAKS: 飛び先を 1 バイト (0〜255) で持つ形
+      ld e,IX(P_SP) $ ld d,IX(P_SP+1) $ ld a,(de) $ dec a $ jp nz, 119$; if (*ch->sp == 1) {
+        ld c,(hl) $ ld b,#0 ; bc = *ch->pc;
+        jp 101$
+      119$:; }
+      inc hl; ch->pc+=1;
       jp 1$; break;
     11$: ; case PSLOAD:{
         ld a,(hl) $ inc hl ; a = *ch->pc++;

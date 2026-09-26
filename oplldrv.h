@@ -37,12 +37,15 @@ typedef struct PSGDrvCh {
 #define PVOLUME 0x82
 #define PEND    0x83
 #define PLOOP   0x84
-#define PNEXT   0x85
-#define PBREAK  0x86
-#define PSLOAD  0x87
-#define PSLAON  0x88
-#define PSUSON  0x89
-#define PDRUMV  0x8A
+// アセンブラ版は cp で 2 つずつ振り分けるので、よく使う命令ほど前に置く
+#define PNEXTS  0x85 // PNEXT の飛び先を符号付き 1 バイトで持つ形
+#define PBREAKS 0x86 // PBREAK の飛び先を 1 バイト (0〜255) で持つ形
+#define PSLAON  0x87
+#define PDRUMV  0x88
+#define PNEXT   0x89
+#define PBREAK  0x8A
+#define PSLOAD  0x8B
+#define PSUSON  0x8C
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);
