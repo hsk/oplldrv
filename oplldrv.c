@@ -196,6 +196,17 @@ void p_exec(PSGDrvCh* ch) {
                 }
     case PSLAON: ch->sla=1; break;
     case PSUSON: ch->sus=1; break;
+    case PDRUMV2:{ // 0x37 と 0x38 に同じ音量を書く
+                  u8 v=*ch->pc++;
+                  ym2413(0x37,v);
+                  ym2413(0x38,v);
+                  break;
+                }
+    case PDRUMV1:{ // 0x37 に音量を書く
+                  u8 v=*ch->pc++;
+                  ym2413(0x37,v);
+                  break;
+                }
     case PDRUMV:{
                   u8 n=*ch->pc++;
                   u8 v=*ch->pc++;
@@ -220,7 +231,8 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PVOLUME $ jp c,5$ $ jp z,6$
       cp #PLOOP $ jp c,7$ $ jp z,8$
       cp #PBREAKS $ jp c,16$ $ jp z,17$
-      cp #PDRUMV $ jp c,13$ $ jp z,15$
+      cp #PDRUMV2 $ jp c,13$ $ jp z,18$
+      cp #PDRUMV $ jp c,19$ $ jp z,15$
       cp #PBREAK $ jp c,9$ $ jp z,10$
       cp #PSUSON $ jp c,11$ $ jp 14$
     ; ) {
@@ -390,6 +402,16 @@ void p_exec(PSGDrvCh* ch) __naked {
       jp 1$ ; break;
     14$: ; case PSUSON:
       ld IX(P_SUS),#1; ch->sus=1;
+      jp 1$ ; break;
+    18$: ; case PDRUMV2: 0x37 と 0x38 に同じ音量を書く
+      ld a,#0x37 $ out (_IOPortOPLL1), a
+      ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a $ ld c,a
+      ld a,#0x38 $ out (_IOPortOPLL1), a
+      ld a,c $ out (_IOPortOPLL2), a
+      jp 1$ ; break;
+    19$: ; case PDRUMV1: 0x37 に音量を書く
+      ld a,#0x37 $ out (_IOPortOPLL1), a
+      ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
       jp 1$ ; break;
     15$: ; case PDRUMV:
       ld a,(hl) $ inc hl $ out (_IOPortOPLL1), a ; ym2413(*ch->pc++,*ch->pc++);

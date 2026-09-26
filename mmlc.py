@@ -19,6 +19,8 @@ PSLOAD="PSLOAD"
 PSLAON="PSLAON"
 PSUSON="PSUSON"
 PDRUMV="PDRUMV"
+PDRUMV1="PDRUMV1"
+PDRUMV2="PDRUMV2"
 PNEXTS="PNEXTS"
 PBREAKS="PBREAKS"
 def ptn(p,s,m):
@@ -408,9 +410,16 @@ def mml_compile(name,chs,loops=2):
       v2=(((15-G.drum_v["m"])&15)<<4)|((15-G.drum_v["c"])&15)
       #print(f"drum volume {v0:02x} {v1:02x} {v2:02x}",file=sys.stderr)
       # v は鳴らす楽器のフラグ (b=0x10 s=0x08 m=0x04 c=0x02 h=0x01)。鳴らす楽器のレジスタだけ書く
-      if (v & 0x10) and v0 != G.old_drum_v[0]: print(f"drum_v0 {v0:02x}",file=sys.stderr); p(PDRUMV,0x36,v0); G.old_drum_v[0]=v0
-      if (v & 0x09) and v1 != G.old_drum_v[1]: print(f"drum_v1 {v1:02x}",file=sys.stderr); p(PDRUMV,0x37,v1); G.old_drum_v[1]=v1
-      if (v & 0x06) and v2 != G.old_drum_v[2]: print(f"drum_v2 {v2:02x}",file=sys.stderr); p(PDRUMV,0x38,v2); G.old_drum_v[2]=v2
+      w0 = (v & 0x10) and v0 != G.old_drum_v[0]
+      w1 = (v & 0x09) and v1 != G.old_drum_v[1]
+      w2 = (v & 0x06) and v2 != G.old_drum_v[2]
+      if w0: p(PDRUMV,0x36,v0); G.old_drum_v[0]=v0
+      # 0x37 と 0x38 は、よく使う形を短い命令にする (書くレジスタと順番は同じ)
+      if w1 and w2 and v1 == v2: p(PDRUMV2,v1)
+      elif w1: p(PDRUMV1,v1)
+      if w2 and not (w1 and v1 == v2): p(PDRUMV,0x38,v2)
+      if w1: G.old_drum_v[1]=v1
+      if w2: G.old_drum_v[2]=v2
     G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
     G.all = 0;G.all2 = 0; G.q=1
     

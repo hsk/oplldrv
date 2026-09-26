@@ -41,11 +41,13 @@ typedef struct PSGDrvCh {
 #define PNEXTS  0x85 // PNEXT の飛び先を符号付き 1 バイトで持つ形
 #define PBREAKS 0x86 // PBREAK の飛び先を 1 バイト (0〜255) で持つ形
 #define PSLAON  0x87
-#define PDRUMV  0x88
-#define PNEXT   0x89
-#define PBREAK  0x8A
-#define PSLOAD  0x8B
-#define PSUSON  0x8C
+#define PDRUMV2 0x88 // 0x37 (HH・SD) と 0x38 (TOM・CYM) に同じ音量を書く
+#define PDRUMV1 0x89 // 0x37 (HH・SD) に音量を書く
+#define PDRUMV  0x8A
+#define PNEXT   0x8B
+#define PBREAK  0x8C
+#define PSLOAD  0x8D
+#define PSUSON  0x8E
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);

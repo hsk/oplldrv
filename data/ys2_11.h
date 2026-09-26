@@ -3814,7 +3814,7 @@ u8 const bgm1_5[498]={
   1,
   0,
   PEND};
-u8 const bgm1_6[444]={
+u8 const bgm1_6[443]={
   3,
   PLOOP,
   1,
@@ -3834,8 +3834,7 @@ u8 const bgm1_6[444]={
   1,
   /*PDRUM*/112,
   6,
-  PDRUMV,
-  55,
+  PDRUMV1,
   49,
   /*PDRUM*/104,
   10,
