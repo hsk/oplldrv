@@ -210,11 +210,12 @@ def loop_expand(chs):
   class G:
     volume=15
     octave=5
+    at=None
     before=0
     after=0
   def expand(n,ch):
     G.before+=len(ch)
-    G.volume=15; G.octave=4
+    G.volume=15; G.octave=4; G.at=None
     r = []
     stack = []
     i = -1
@@ -227,24 +228,31 @@ def loop_expand(chs):
           case ["v-",n]:G.volume-=n
           case ["v+",n]:G.volume+=n
           case ["o",n]: G.octave=n-1
+          case ["@",n]: G.at=n
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
-          case ["["]: stack.append([len(r),None,G.volume,G.octave,None])
-          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave)
+          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at])
+          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at)
           case ["]",n]:
-            [start,br,vol,octave,brstate]= stack.pop()
+            [start,br,vol,octave,brstate,at]= stack.pop()
             if br == None: br=len(r)
             # オクターブに依存するループか: 本体で o より前に音符か < > がある
             use_octave = False
             for c in r[start+1:]:
               if c[0] == "o": break
               if c[0] in ("<",">") or (c[0] == "tone" and c[1] != "r"): use_octave = True; break
-            if (G.volume != vol or (use_octave and G.octave != octave)) and n!=0: # 状態が違うので展開する
+            # 音色に依存するループか: 本体で @ より前に音符がある
+            use_at = False
+            for c in r[start+1:]:
+              if c[0] == "@": break
+              if c[0] == "tone" and c[1] != "r": use_at = True; break
+            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at)) and n!=0: # 状態が違うので展開する
               # 展開したあとのオクターブ: 最後の周の | (なければ終わり) の時点の値。
               # オクターブに依存するループなら、1 周の変化 x (n-1) が積み重なる
               # (音量は今までどおり 1 周した後の値のまま。直すと展開が増えるので別に考える)
               bo = brstate[1] if brstate else G.octave
               G.octave = bo+(G.octave-octave)*(n-1) if use_octave else bo
+              if brstate: G.at = brstate[2]
               before=len(r)
               loop1=r[start+1:br]
               loop=loop1+r[br+1:]
@@ -260,7 +268,7 @@ def loop_expand(chs):
               G.after += after-before
               continue
             # 展開しないループで | があれば、ループのあとは | の時点の状態になる
-            if brstate: G.volume,G.octave = brstate
+            if brstate: G.volume,G.octave,G.at = brstate
       r.append(v)
     return r
   r = {}
