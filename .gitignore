@@ -18,3 +18,5 @@
 # MGSDRV との比較結果
 /mgscmp/
 node_modules/
+# VGM 出力
+/vgm/

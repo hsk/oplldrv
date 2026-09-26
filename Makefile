@@ -63,6 +63,15 @@ bin/msxplay/node_modules: bin/msxplay/package.json
 	cd bin/msxplay && npm install
 	@touch $@
 
+# VGM 出力: make vgm-01 (1 曲)、make vgm (全曲)。vgz にするなら make vgz-01、make vgz。結果は vgm/ に出る
+# エミュレータの OPLL への書き込みログ (result) を bin/vgm.py で VGM に変える
+vgm: $(addprefix vgm-,$(YS2))
+vgz: $(addprefix vgz-,$(YS2))
+vgm-% vgz-%:
+	@mkdir -p vgm
+	@make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=ys2_$*" OPEN=true 2>/dev/null >/dev/null
+	@python3 bin/vgm.py result vgm/ys2_$*.$(firstword $(subst -, ,$@)) res/ys2_$*.mml
+
 mp4:
 	python title.py "YM2413 DEMO"
 	ffmpeg -y -loop 1 -i title.png -i opll.wav -shortest -vcodec libx264 -pix_fmt yuv420p -acodec aac opll.mp4
