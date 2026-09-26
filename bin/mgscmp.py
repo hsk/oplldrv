@@ -193,8 +193,10 @@ def compare(name, a_path, b_path, verbose=False):
         dlen = [((a.end or end) - a.start) - ((b.end or end) - b.start) for a, b in pairs_all]
         inst_ng = [(a, b) for a, b in pairs_all if (a.inst, a.vol) != (b.inst, b.vol)]
         # 鳴りっぱなし: MGSDRV では止まっているのに oplldrv では最後まで鳴っている / 長すぎる
-        # 比較範囲の終わり近くで MGSDRV が止めた音は、次の周の始まりのことがあるので数えない
-        hang = [(a, b) for a, b in pairs_all if a.end is None and b.end is not None and b.end < end - 30]
+        # oplldrv の音が MGSDRV と同じ長さなら比較範囲の中で止まるはずなのに、止まっていないもの。
+        # 範囲の終わり近くのものは、タイミングのずれで範囲の外で止まっていることがあるので数えない
+        hang = [(a, b) for a, b in pairs_all
+                if a.end is None and b.end is not None and a.start + (b.end - b.start) < end - 30]
         long_ = [(a, b) for a, b in pairs_all if a.end is not None and b.end is not None
                  and (a.end - a.start) - (b.end - b.start) >= 8]
         unmatched_a = len(A) - len(pairs_all)
