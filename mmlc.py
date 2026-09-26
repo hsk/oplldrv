@@ -349,8 +349,10 @@ def mml_compile(name,chs,loops=2):
                       #print(f"w {w} q {G.q}")
                       outvolume()
                       p(f"/*PTONE,*/{b+G.o*12}")
-                      outwait(f"tone {b}", False,PWAIT,w*G.q)
-                      if G.q!=1: outwait(f"off {b}",PKEYOFF,PKEYOFF,w*(1-G.q))
+                      # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
+                      q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
+                      outwait(f"tone {b}", False,PWAIT,w*q)
+                      if q!=1: outwait(f"off {b}",PKEYOFF,PKEYOFF,w*(1-q))
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
         case ["o",o]: G.o=o-1
