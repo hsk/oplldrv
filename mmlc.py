@@ -217,7 +217,7 @@ def loop_expand(chs):
     after=0
   def expand(n,ch):
     G.before+=len(ch)
-    G.volume=15; G.octave=4; G.at=None
+    G.volume=15; G.octave=4; G.at=None; G.dv={}
     r = []
     stack = []
     i = -1
@@ -231,12 +231,14 @@ def loop_expand(chs):
           case ["v+",n]:G.volume+=n
           case ["o",n]: G.octave=n-1
           case ["@",n]: G.at=n
+          case ["drum_v",a,"",n]: G.dv=dict(G.dv); G.dv[a]=int(n)
+          case ["drum_v",a,sign,n]: G.dv=dict(G.dv); G.dv[a]=G.dv.get(a,0)+(int(n) if sign=="+" else -int(n))
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
-          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at])
-          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at)
+          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv])
+          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv)
           case ["]",n]:
-            [start,br,vol,octave,brstate,at]= stack.pop()
+            [start,br,vol,octave,brstate,at,dv]= stack.pop()
             if br == None: br=len(r)
             # オクターブに依存するループか: 本体で o より前に音符か < > がある
             use_octave = False
@@ -248,13 +250,15 @@ def loop_expand(chs):
             for c in r[start+1:]:
               if c[0] == "@": break
               if c[0] == "tone" and c[1] != "r": use_at = True; break
-            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at)) and n!=0: # 状態が違うので展開する
+            # ドラムの楽器ごとの相対音量 (vs+1 など) で 1 周ごとに音量が変わるループも展開する
+            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at) or G.dv != dv) and n!=0: # 状態が違うので展開する
               # 展開したあとのオクターブ: 最後の周の | (なければ終わり) の時点の値。
               # オクターブに依存するループなら、1 周の変化 x (n-1) が積み重なる
               # (音量は今までどおり 1 周した後の値のまま。直すと展開が増えるので別に考える)
               bo = brstate[1] if brstate else G.octave
               G.octave = bo+(G.octave-octave)*(n-1) if use_octave else bo
               if brstate: G.at = brstate[2]
+              G.dv = {k: G.dv[k]+(G.dv[k]-dv.get(k,0))*(n-1) for k in G.dv} # 相対の変化は n 周分
               before=len(r)
               loop1=r[start+1:br]
               loop=loop1+r[br+1:]
@@ -270,7 +274,7 @@ def loop_expand(chs):
               G.after += after-before
               continue
             # 展開しないループで | があれば、ループのあとは | の時点の状態になる
-            if brstate: G.volume,G.octave,G.at = brstate
+            if brstate: G.volume,G.octave,G.at,G.dv = brstate
       r.append(v)
     return r
   r = {}
@@ -297,8 +301,8 @@ def loop_state(tokens, st, drum):
         case ["v-"|"v+",n] if drum: st["rv"]=min(15,max(0,st["rv"]+n)); st["dv"]={k:st["rv"] for k in st["dv"]}
         case ["v-"|"v+",n]: st["v"]=min(15,max(0,st["v"]+n))
         case ["drum_v",a,"",n]: st["dv"][a]=int(n); st["rv"]=int(n)
-        case ["drum_v",a,"+",n]: st["dv"][a]+=int(n)
-        case ["drum_v",a,"-",n]: st["dv"][a]-=int(n)
+        case ["drum_v",a,"+",n]: st["dv"][a]=min(15,st["dv"][a]+int(n))
+        case ["drum_v",a,"-",n]: st["dv"][a]=max(0,st["dv"][a]-int(n))
         case ["["]:
           # 対応する ] と | を探して、回数分まわす
           d=0; br=None; j=i
@@ -506,8 +510,8 @@ def mml_compile(name,chs,loops=2):
                       G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q)
                       p(PBREAK,None,None)
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
-        case ["drum_v",a,"+",n]: G.drum_v[a]+=int(n)
-        case ["drum_v",a,"-",n]: G.drum_v[a]-=int(n)
+        case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
+        case ["drum_v",a,"-",n]: G.drum_v[a]=max(0,G.drum_v[a]-int(n))
         case ["drum_v",a,"",n]: G.drum_v[a]=int(n); G.drum_rv=int(n)
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
