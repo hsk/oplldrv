@@ -273,8 +273,9 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; if(*ch->sp
         jp z, 99$
       ; ) {
-        jp nc, 96$ ; if(*ch->sp==255) {
-          ;inc a      ; (*ch->sp)++;
+        ; dec はキャリーフラグを変えないので、255 かどうかは inc a で 0 になるかで見る
+        inc a $ jp nz, 96$ ; if(*ch->sp==255) {
+          ld (de), a ; (*ch->sp)++; 無限ループのカウンタを 0 に戻す
           ld a,IX(P_DRUM) $ or a $ jp nz, 95$
             ld a,IX(P_NO20) $ out (_IOPortOPLL1), a; ym2413(ch->no20,0)
             xor a $ out	(_IOPortOPLL2), a
