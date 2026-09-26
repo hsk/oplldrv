@@ -1,0 +1,10 @@
+{
+  "name": "oplldrv-msxplay",
+  "private": true,
+  "description": "MGSDRV (mgsc-js + libkss-js) で MML を鳴らし、oplldrv と比べるためのレジスタのログを出す",
+  "type": "module",
+  "dependencies": {
+    "libkss-js": "^3.0.0",
+    "mgsc-js": "^2.0.0"
+  }
+}

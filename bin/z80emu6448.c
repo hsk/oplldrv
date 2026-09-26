@@ -218,6 +218,7 @@ static void WriteIO(u16 port, u8 data) {
 			printf("%d\n", data);
 			break;
 		case 9:
+			printf("wait\n"); // フレームの区切り (bin/mgscmp.py で使う)
 			while(wait_clk<=reg.clk) wait_clk += (44100*81/60);
 			skip_clk += wait_clk-reg.clk;
 			reg.clk = wait_clk;

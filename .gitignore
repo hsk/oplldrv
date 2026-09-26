@@ -15,3 +15,6 @@
 /result
 *.wav
 *.mp4
+# MGSDRV との比較結果
+/mgscmp/
+node_modules/
