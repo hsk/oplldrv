@@ -301,9 +301,10 @@ def mml_compile(name,chs,loops=2):
       v1=(((15-G.drum_v["h"])&15)<<4)|((15-G.drum_v["s"])&15)
       v2=(((15-G.drum_v["m"])&15)<<4)|((15-G.drum_v["c"])&15)
       #print(f"drum volume {v0:02x} {v1:02x} {v2:02x}",file=sys.stderr)
-      if (v & 1) and v0 != G.old_drum_v[0]: print(f"drum_v0 {v0:02x}",file=sys.stderr); p(PDRUMV,0x36,v0); G.old_drum_v[0]=v0
-      if ((v&2) or (v&16)) and v1 != G.old_drum_v[1]: print(f"drum_v1 {v2:02x}",file=sys.stderr); p(PDRUMV,0x37,v1); G.old_drum_v[1]=v1
-      if ((v&4) or (v&8)) and v2 != G.old_drum_v[2]: print(f"drum_v2 {v2:02x}",file=sys.stderr); p(PDRUMV,0x38,v2); G.old_drum_v[2]=v2
+      # v は鳴らす楽器のフラグ (b=0x10 s=0x08 m=0x04 c=0x02 h=0x01)。鳴らす楽器のレジスタだけ書く
+      if (v & 0x10) and v0 != G.old_drum_v[0]: print(f"drum_v0 {v0:02x}",file=sys.stderr); p(PDRUMV,0x36,v0); G.old_drum_v[0]=v0
+      if (v & 0x09) and v1 != G.old_drum_v[1]: print(f"drum_v1 {v1:02x}",file=sys.stderr); p(PDRUMV,0x37,v1); G.old_drum_v[1]=v1
+      if (v & 0x06) and v2 != G.old_drum_v[2]: print(f"drum_v2 {v2:02x}",file=sys.stderr); p(PDRUMV,0x38,v2); G.old_drum_v[2]=v2
     G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
     G.all = 0;G.all2 = 0; G.q=1
     
