@@ -276,9 +276,14 @@ def mml_compile(name,chs,loops=2):
     ch = []; i = 0
     for k,ss in chs["@"].items(): ch.extend(map(str,ss));G.sounds[k]=i;i+=1
     print(f"u8 const {name}_sound[{len(ch)}]={{{','.join(ch)}}};")
+  # 末尾の使っていないチャンネルは出力しない。出力すると終了処理 (PEND) がレジスタ 0x20+ch に 0 を書き、
+  # リズムモードでは G・H (0x27・0x28) のリズムの音程が変わってしまう。途中の空きチャンネルは、
+  # チャンネル番号がずれるので残す
+  names = [n for n in chs if n not in "@#"]
+  while names and not chs[names[-1]]: names.pop()
   i = -1
   for n,ch in chs.items():
-    if n=="@" or n=="#": continue
+    if n=="@" or n=="#" or n not in names: continue
     i+=1
     G.n2i[n]=i
     G.i2n[i]=n

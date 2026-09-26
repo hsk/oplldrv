@@ -1617,14 +1617,5 @@ u8 const bgm1_5[194]={
   PKEYOFF,
   64,
   PEND};
-u8 const bgm1_6[2]={
-  0,
-  PEND};
-u8 const bgm1_7[2]={
-  0,
-  PEND};
-u8 const bgm1_8[2]={
-  0,
-  PEND};
-u8* const bgm1[]={(u8*)9,bgm1_sound,bgm1_0,bgm1_1,bgm1_2,bgm1_3,bgm1_4,bgm1_5,bgm1_6,bgm1_7,bgm1_8,};
+u8* const bgm1[]={(u8*)6,bgm1_sound,bgm1_0,bgm1_1,bgm1_2,bgm1_3,bgm1_4,bgm1_5,};
 #define bgm1_frames 2048
