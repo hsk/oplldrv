@@ -231,8 +231,17 @@ def loop_expand(chs):
           case ["]",n]:
             [start,br,vol,octave,brstate]= stack.pop()
             if br == None: br=len(r)
-            G.octave=octave
-            if (G.volume != vol or G.octave != octave) and n!=0: # 状態が違うので展開する
+            # オクターブに依存するループか: 本体で o より前に音符か < > がある
+            use_octave = False
+            for c in r[start+1:]:
+              if c[0] == "o": break
+              if c[0] in ("<",">") or (c[0] == "tone" and c[1] != "r"): use_octave = True; break
+            if (G.volume != vol or (use_octave and G.octave != octave)) and n!=0: # 状態が違うので展開する
+              # 展開したあとのオクターブ: 最後の周の | (なければ終わり) の時点の値。
+              # オクターブに依存するループなら、1 周の変化 x (n-1) が積み重なる
+              # (音量は今までどおり 1 周した後の値のまま。直すと展開が増えるので別に考える)
+              bo = brstate[1] if brstate else G.octave
+              G.octave = bo+(G.octave-octave)*(n-1) if use_octave else bo
               before=len(r)
               loop1=r[start+1:br]
               loop=loop1+r[br+1:]
