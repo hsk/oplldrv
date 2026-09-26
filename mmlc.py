@@ -182,7 +182,10 @@ def parse_channel(ch,src,drum):
       case "s":
         if src[pos]=="o": pos+=1; o("so")
         elif src[pos]=="f": pos+=1; o("sf")
-      case "[" | "<" | ">" | "&" | "|": o(c)
+      case "[" | "<" | ">" | "|": o(c)
+      # & はすぐ前が音符のときだけ効く (MGSDRV と同じ。「c8(&d8」や「[c8|&]2」ではつながない)
+      case "&" if r and r[-1][0] == "tone": o(c)
+      case "&": pass
       case "(": n=-readInt(1);o("v-" if n < 0 else "v+",n)
       case ")": n=readInt(1);o("v-" if n < 0 else "v+",n)
       case "\\": o(c,readInt())
