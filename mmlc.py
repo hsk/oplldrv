@@ -277,8 +277,94 @@ def loop_expand(chs):
   for n,ch in chs.items():
     if n=="@" or n=="#" or ch==None: r[n]=ch; continue
     r[n]= expand(n,ch)
+    r[n]= unroll_infinite(n,r[n],chs["#"]["opll_mode"] and n=="F")
   print(f"loop expand {G.before}+{G.after} to {G.before+G.after}commands +{G.after/G.before*100:0.2f}%",file=sys.stderr)
   return r
+
+def loop_state(tokens, st, drum):
+  """tokens を鳴らしたあとの状態 (オクターブ・音量・音色・ドラム音量) を返す。ループは回数分まわす"""
+  st = dict(st, dv=dict(st["dv"]))
+  def run(i, end):
+    while i < end:
+      c = tokens[i]
+      match c:
+        case ["o",n]: st["o"]=n-1
+        case ["<"] if st["o"]>0: st["o"]-=1
+        case [">"] if st["o"]<7: st["o"]+=1
+        case ["@",n]: st["at"]=n
+        case ["v",n] if drum: st["rv"]=n; st["dv"]={k:n for k in st["dv"]}
+        case ["v",n]: st["v"]=n
+        case ["v-"|"v+",n] if drum: st["rv"]=min(15,max(0,st["rv"]+n)); st["dv"]={k:st["rv"] for k in st["dv"]}
+        case ["v-"|"v+",n]: st["v"]=min(15,max(0,st["v"]+n))
+        case ["drum_v",a,"",n]: st["dv"][a]=int(n); st["rv"]=int(n)
+        case ["drum_v",a,"+",n]: st["dv"][a]+=int(n)
+        case ["drum_v",a,"-",n]: st["dv"][a]-=int(n)
+        case ["["]:
+          # 対応する ] と | を探して、回数分まわす
+          d=0; br=None; j=i
+          while True:
+            j+=1
+            if tokens[j][0]=="[": d+=1
+            elif tokens[j][0]=="]":
+              if d==0: break
+              d-=1
+            elif tokens[j][0]=="|" and d==0: br=j
+          cnt=max(tokens[j][1],1)
+          for k in range(cnt):
+            if br is not None and k==cnt-1: run(i+1,br); break
+            run(i+1,j)
+          i=j
+      i+=1
+  run(0, len(tokens))
+  return st
+
+def unroll_infinite(name, tokens, drum):
+  """一番外側の無限ループ [本体]0 で、1 周すると状態 (オクターブ・音量・音色・ドラム音量) が変わるなら、
+  状態が変わらなくなるまで本体を並べてから無限ループにする: 本体(S0) 本体(S1) ... [本体(Sk)]0
+  MGSDRV は 2 周目以降を変わった状態のまま鳴らすが、コンパイラは本体を 1 回しかコンパイルしないため"""
+  # 一番外側の [ ... ]0 を探す
+  d=0; start=None
+  for i,c in enumerate(tokens):
+    if c[0]=="[":
+      if d==0: start=i
+      d+=1
+    elif c[0]=="]":
+      d-=1
+      if d==0 and c[1]==0: end=i; break
+    elif c[0]=="|" and d==1: return tokens # 無限ループのブレイクは扱わない
+  else:
+    return tokens
+  body=tokens[start+1:end]
+  # 本体が入口の状態を使うか: 状態を指定し直すより前に、その状態を使う命令があるか
+  def uses(setk, usek):
+    for c in body:
+      if c[0]==setk: return False
+      if c[0] in usek or (c[0]=="tone" and c[1]!="r"): return True
+    return False
+  keys=[]
+  if uses("o",("<",">")): keys.append("o")
+  if drum:
+    if uses("v",("drum","v-","v+","drum_v")): keys+=["rv","dv"]
+  else:
+    if uses("v",("v-","v+")): keys.append("v")
+    if uses("@",()): keys.append("at")
+  if not keys: return tokens
+  key=lambda st: tuple(str(st[k]) for k in keys)
+  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
+  k=0; s0=st
+  while True:
+    nx=loop_state(body, st, drum)
+    if key(nx)==key(st): break
+    k+=1; st=nx
+    if k>16:
+      print(f"warning: {name} 無限ループの状態が 16 周で落ち着かないので展開しない",file=sys.stderr)
+      return tokens
+  if k==0: return tokens
+  names={"o":"オクターブ","v":"音量","at":"音色","rv":"ドラムの基準の音量","dv":"ドラムの音量"}
+  changed=[k for k in keys if str(s0[k])!=str(loop_state(body, s0, drum)[k])]
+  print(f"warning: {name} の無限ループは 1 周で {'・'.join(names[k] for k in changed if k!='dv' or 'rv' not in changed)} が変わるので、"
+        f"MGSDRV と同じに鳴らすため本体 ({len(body)} コマンド) を {k} 周分展開した (データが大きくなる)",file=sys.stderr)
+  return tokens[:start]+body*k+tokens[start:]
 
 def mml_compile(name,chs,loops=2):
   print(chs)
