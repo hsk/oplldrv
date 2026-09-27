@@ -134,7 +134,7 @@ def parse_sharp(lines):
     elif ptn("^(title)\s*{\s*\"([^\"]+)\"\s*}",l,m): r[m[1]]=m[2]
   return r
 def parse_channel(ch,src,drum):
-  r = []; l=48; pos = 0
+  r = []; l=48; pos = 0; counts = [] # [n で書いたループの回数
   def readInt(default=Exception):
     nonlocal src,pos; r=[]
     if ptn("^-?[0-9]+",src[pos:],r): pos += len(r[0]); return int(r[0])
@@ -204,12 +204,16 @@ def parse_channel(ch,src,drum):
       case "l": l=readLen(c,l); o("l",l)
       case "v" if ptn("^([+-])",src[pos:],m):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
-      case "]": o(c,readInt(2)) # 回数がなければ 2 回 (MGSDRV と同じ)
+      case "[": o(c); counts.append(readInt(None)) # [3 のように先頭にも回数を書ける
+      case "]":
+        # 回数は [n があればそれ (]m より優先)、なければ ]m、どちらもなければ 2 回 (MGSDRV と同じ)
+        n=readInt(None); n0=counts.pop() if counts else None
+        o(c, n0 if n0 is not None else n if n is not None else 2)
       case "@" | "o" | "v" | "q" | "t": o(c,readInt())
       case "s":
         if src[pos]=="o": pos+=1; o("so")
         elif src[pos]=="f": pos+=1; o("sf")
-      case "[" | "<" | ">" | "|": o(c)
+      case "<" | ">" | "|": o(c)
       # & はすぐ前が音符のときだけ効く (MGSDRV と同じ。「c8(&d8」や「[c8|&]2」ではつながない)
       case "&" if r and r[-1][0] == "tone": o(c)
       case "&": pass
