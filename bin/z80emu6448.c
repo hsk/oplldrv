@@ -83,98 +83,56 @@ void wav_close(FILE* fp) {
 	fclose(fp);
 }
 u64 wait_clk;
+// 音: OPLL・PSG (MSX の AY-3-8910)・SNG (SMS の SN76489) は、最初に書き込まれたときに作る。
+// 3 つを混ぜて opll.wav に出す (作っていないチップは 0)
 PSG *psg =NULL;
 u8 psg_reg;
-s64 psg_clk;
-FILE *psgf;
 void psg_init(){
 	if (psg!=NULL) return;
 	psg = PSG_new(MSX_CLK/2,44100);
 	PSG_setVolumeMode(psg, 2); // AY style
 	PSG_set_quality(psg,1);
 	PSG_reset(psg);
-
-	psg_clk = 0;
-	psgf = fopen("psg.wav","wb");
-	wav_header(psgf);
-}
-void psg_update(){
-	if (psg==NULL) return;
-	while (reg.clk - psg_clk >= 81) {
-		u16 b = PSG_calc(psg);
-		fprintf(psgf,"%c%c",b&255,b>>8);
-		psg_clk += 81;
-	}
-}
-void psg_close() {
-	if (psg==NULL) return;
-	wav_close(psgf);
-	PSG_delete(psg);
-	psg = NULL;
 }
 SNG *sng =NULL;
-u8 sng_reg;
-s64 sng_clk;
-FILE *sngf;
 void sng_init(){
 	if (sng!=NULL) return;
 	sng = SNG_new(MSX_CLK,44100);
 	SNG_set_quality(sng,1);
 	SNG_reset(sng);
-
-	sng_clk = 0;
-	sngf = fopen("sng.wav","wb");
-	wav_header(sngf);
-
-}
-void sng_update(){
-	if (sng==NULL) return;
-	while (reg.clk - sng_clk >= 81) {
-		u16 b = SNG_calc(sng);
-		fprintf(sngf,"%c%c",b&255,b>>8);
-		sng_clk += 81;
-	}
-}
-void sng_close() {
-	if (sng==NULL) return;
-	wav_close(sngf);
-	SNG_delete(sng);
-	sng = NULL;
 }
 OPLL *opll =NULL;
-u8 opll_reg;
-s64 opll_clk;
-FILE *opllf;
 void opll_init(){
 	if (opll!=NULL) return;
 	opll = OPLL_new(MSX_CLK,44100);
 	OPLL_set_quality(opll,1);
 	OPLL_reset(opll);
-
-	opll_clk = 0;
-	opllf = fopen("opll.wav","wb");
-	wav_header(opllf);
-
 }
-#define min(a,b) ((a)<(b)?(a):(b))
-#define max(a,b) ((a)>(b)?(a):(b))
-void opll_update(){
-	if (opll==NULL) return;
-	while (reg.clk - opll_clk >= 81) {
-		//u16 b = (u16)OPLL_calc(opll);
-		int b1 = (((int)OPLL_calc(opll))*2);
-		if (b1 < -32768) b1=-32768;
-		if (b1 > 32767) b1=32767;
-		u16 b=b1;
-		fprintf(opllf,"%c%c",b&255,b>>8);
-		opll_clk += 81;
+s64 wav_clk;
+FILE *wavf;
+void sound_init(){
+	wav_clk = 0;
+	wavf = fopen("opll.wav","wb");
+	wav_header(wavf);
+	opll_init(); // OPLL は最初から鳴らす (今までの opll.wav と同じ時刻で計算する)
+}
+void sound_update(){
+	while (reg.clk - wav_clk >= 81) {
+		int b = 0;
+		if (opll) b += ((int)OPLL_calc(opll))*2;
+		if (psg) b += PSG_calc(psg);
+		if (sng) b += SNG_calc(sng);
+		if (b < -32768) b=-32768;
+		if (b > 32767) b=32767;
+		fprintf(wavf,"%c%c",b&255,(b>>8)&255);
+		wav_clk += 81;
 	}
 }
-void opll_close() {
-	if (opll==NULL) return;
-	wav_close(opllf);
-	OPLL_delete(opll);
-	opll = NULL;
+void sound_close() {
+	wav_close(wavf);
+	if (psg) PSG_delete(psg);
+	if (sng) SNG_delete(sng);
+	if (opll) OPLL_delete(opll);
 }
 
 u64 skip_clk=0;
@@ -278,6 +236,7 @@ int main(int argc, char *argv[]) {
 	s_mem[0xfffe] = 0x76;
 	reg.PC = baseAddr;
 	reg.clk = wait_clk = 0;
+	sound_init();
 	for(;;) {
 		reg.R++;
 		u8 inst = ReadMemI(&reg);
@@ -285,13 +244,9 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 		(*instTbl[inst])(&reg);
-		psg_update();
-		sng_update();
-		opll_update();
+		sound_update();
 	}
-	psg_close();
-	sng_close();
-	opll_close();
+	sound_close();
 	for(int i = 0; i < 4; i++) {
 		s64 clk;
 		s32 sec, hh, mm, ss;
