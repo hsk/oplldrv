@@ -224,6 +224,7 @@ static void WriteIO(u16 port, u8 data) {
 			reg.clk = wait_clk;
 			break;
 		case 0x7e:// sms psg
+			printf("sng %d\n",data); // SN76489 への書き込み (1 バイトの命令)
 			sng_init();
 			SNG_writeIO(sng,data);
 			break;
@@ -231,6 +232,7 @@ static void WriteIO(u16 port, u8 data) {
 			psg_reg=data;
 			break;
 		case 0xa1: 
+			printf("psg %d %d\n",psg_reg,data); // AY-3-8910 への書き込み (レジスタ 値。mgs2log.mjs と同じ形)
 			psg_init();
 			PSG_writeReg(psg,psg_reg,data);
 			break;
