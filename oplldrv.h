@@ -17,6 +17,18 @@ typedef struct PSGDrvCh {
   u8 sla;
   u8 sus;  // サスティン (so で 0x20、sf で 0)。0x20+ch に書く値に足す
   u8 drum;
+  // ソフトウェア LFO (h a,b,c,d)。PLFO で設定し、PTONEL の音で使う
+  u8 lfo;   // 1 で動かす
+  u8 key;   // 0x20+ch のキーのビット (PTONEL で 0x10、PKEYOFFL で 0)
+  u8 la;    // 遅れ (フレーム)
+  u8 lb;    // 振れ幅の段数
+  u8 lc;    // 速さ (c+1 フレームで 1 段)
+  s8 ld;    // 1 段で F-Number に足す値
+  u8 lt;    // 次の段までのフレーム数
+  u8 lcnt;  // 折り返すまでの段数
+  s8 lstep; // 今の向きの 1 段 (±ld)
+  s16 lval; // 今の F-Number のずれ
+  u16 lbase;// 音の音程 (block<<9 | F-Number)
 } PSGDrvCh;
 #define P_WAIT 0
 #define P_PC   1
@@ -28,7 +40,18 @@ typedef struct PSGDrvCh {
 #define P_SLA  9
 #define P_SUS  10
 #define P_DRUM 11
-#define P_SIZE 12
+#define P_LFO  12
+#define P_KEY  13
+#define P_LA   14
+#define P_LB   15
+#define P_LC   16
+#define P_LD   17
+#define P_LT   18
+#define P_LCNT 19
+#define P_LSTEP 20
+#define P_LVAL 21
+#define P_LBASE 23
+#define P_SIZE 25
 #define IX(x) x(ix)
 
 #define PDRUM   0x60
@@ -50,6 +73,10 @@ typedef struct PSGDrvCh {
 #define PSUSON  0x8E
 #define PSUSOFF 0x8F
 #define PTONEF  0x90 // デチューンした音。F-Number の下位 8 ビット、ブロックと上位 1 ビット、長さ
+#define PTONEL  0x91 // LFO をかける音。PTONEF と同じ形で、LFO をやり直す
+#define PKEYOFFL 0x92 // LFO をかけている音のキーオフ。PKEYOFF と同じ形で、キーの状態を覚える
+#define PLFO    0x93 // LFO を設定して動かす。遅れ、振れ幅の段数、速さ、1 段の値
+#define PLFOOFF 0x94 // LFO を止める
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);

@@ -5,6 +5,7 @@
 
 u8* sound;
 PSGDrvCh psgdrv[9];
+u8 lfo_used; // PLFO を 1 度でも実行したら 1。0 の間はフレームごとの LFO の処理をしない
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -124,7 +125,7 @@ void p_exec(PSGDrvCh* ch) {
     case PKEYOFF: ym2413(ch->no20,ch->tone);
     case PWAIT: a=*ch->pc++;ch->wait=a; return;
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
-    case PEND:  ch->pc--; ch->wait=0;ym2413(ch->no20,0); return;
+    case PEND:  ch->pc--; ch->wait=0;ch->lfo=0;ym2413(ch->no20,0); return;
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext; // 飛び先が近いときの 1 バイトの形
     case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
@@ -197,6 +198,31 @@ void p_exec(PSGDrvCh* ch) {
     case PSLAON: ch->sla=1; break;
     case PSUSON: ch->sus=0x20; break;
     case PSUSOFF: ch->sus=0; break;
+    case PTONEL:{ // LFO をかける音。スラーでつなぐときは速さのタイマーを続ける
+                  if (!ch->sla) {
+                    ym2413(ch->no20,0);
+                    ch->lt=ch->la+ch->lc+2;
+                  }
+                  ch->sla=0;
+                  ch->key=0x10;
+                  ch->lbase=*(u16*)ch->pc;
+                  ch->lval=0;
+                  ch->lstep=ch->ld;
+                  ch->lcnt=(u8)((ch->lb+1)>>1);
+                  ym2413(ch->no10,*ch->pc++);
+                  a = *ch->pc++|ch->sus;
+                  ch->tone=a;
+                  ym2413(ch->no20,(1<<4)|a);
+                  a=*ch->pc++;ch->wait=a;
+                  return;
+                }
+    case PKEYOFFL: ch->key=0; ym2413(ch->no20,ch->tone); a=*ch->pc++;ch->wait=a; return;
+    case PLFO:  ch->la=*ch->pc++; ch->lb=*ch->pc++; ch->lc=*ch->pc++; ch->ld=*ch->pc++;
+                ch->lfo=1; lfo_used=1;
+                ch->lt=ch->la+ch->lc+2;
+                ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
+                break;
+    case PLFOOFF: ch->lfo=0; break;
     case PTONEF:{ // デチューンした音。音程をデータで持つ
                   if (!ch->sla) {
                     ym2413(ch->no20,0);
@@ -248,7 +274,9 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PDRUMV $ jp c,19$ $ jp z,15$
       cp #PBREAK $ jp c,9$ $ jp z,10$
       cp #PSUSON $ jp c,11$ $ jp z,14$
-      cp #PTONEF $ jp c,20$ $ jp 21$
+      cp #PTONEF $ jp c,20$ $ jp z,21$
+      cp #PKEYOFFL $ jp c,22$ $ jp z,23$
+      cp #PLFOOFF $ jp c,24$ $ jp 25$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -288,6 +316,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a
       jp 1$; break;
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
+      ld IX(P_LFO),#0 ; ch->lfo=0
       ; ym2413(ch->no20,0)
       ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
       xor a $ out	(_IOPortOPLL2), a
@@ -430,6 +459,38 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld IX(P_SLA),#0 ; ch->sla=0
       ld e,l $ ld d,h $ inc hl $ inc hl ; de = 音程の 2 バイト
       jp 32$
+    22$: ; case PTONEL: LFO をかける音。スラーでつなぐときは速さのタイマーを続ける
+      ld a,IX(P_NO20) $ ld c,a
+      xor a $ cp IX(P_SLA) $ jp nz, 221$; if (!ch->sla) {
+        ld a,c $ out (_IOPortOPLL1), a
+        xor a $ out (_IOPortOPLL2), a
+        ld a,IX(P_LA) $ add a,IX(P_LC) $ add a,#2 $ ld IX(P_LT),a ; ch->lt=ch->la+ch->lc+2
+      221$: ; }
+      ld IX(P_SLA),#0 ; ch->sla=0
+      ld IX(P_KEY),#0x10 ; ch->key=0x10
+      ld a,(hl) $ ld IX(P_LBASE),a $ inc hl $ ld a,(hl) $ ld IX(P_LBASE+1),a $ dec hl
+      xor a $ ld IX(P_LVAL),a $ ld IX(P_LVAL+1),a ; ch->lval=0
+      ld a,IX(P_LD) $ ld IX(P_LSTEP),a ; ch->lstep=ch->ld
+      ld a,IX(P_LB) $ srl a $ adc a,#0 $ ld IX(P_LCNT),a ; ch->lcnt=(lb+1)>>1
+      ld e,l $ ld d,h $ inc hl $ inc hl ; de = 音程の 2 バイト
+      jp 32$
+    23$: ; case PKEYOFFL:
+      ld IX(P_KEY),#0 ; ch->key=0
+      jp 4$
+    24$: ; case PLFO:
+      ld a,(hl) $ inc hl $ ld IX(P_LA),a
+      ld a,(hl) $ inc hl $ ld IX(P_LB),a
+      srl a $ adc a,#0 $ ld IX(P_LCNT),a ; ch->lcnt=(lb+1)>>1
+      ld a,(hl) $ inc hl $ ld IX(P_LC),a
+      add a,IX(P_LA) $ add a,#2 $ ld IX(P_LT),a ; ch->lt=ch->la+ch->lc+2
+      ld a,(hl) $ inc hl $ ld IX(P_LD),a $ ld IX(P_LSTEP),a
+      xor a $ ld IX(P_LVAL),a $ ld IX(P_LVAL+1),a
+      ld IX(P_LFO),#1
+      ld a,#1 $ ld (_lfo_used),a
+      jp 1$
+    25$: ; case PLFOOFF:
+      ld IX(P_LFO),#0
+      jp 1$
     18$: ; case PDRUMV2: 0x37 と 0x38 に同じ音量を書く
       ld a,#0x37 $ out (_IOPortOPLL1), a
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a $ ld c,a
@@ -471,6 +532,7 @@ void p_play(u8 **bs,u8*stack) {
   p_reset(((u8*)bs)[1]);
   u8* sp=stack;
   track_size = (u8)*bs++;
+  lfo_used=0;
   sound=*bs++;
   for(u8 i=0;i<track_size;i++) {
     psgdrv[i].pc=bs[i]+1;
@@ -483,6 +545,8 @@ void p_play(u8 **bs,u8*stack) {
     sp += bs[i][0]*2;
     psgdrv[i].sla=0;
     psgdrv[i].sus=0;
+    psgdrv[i].lfo=0;
+    psgdrv[i].key=0;
     psgdrv[i].drum= (((u8*)bs)[-3]!=0 && i==6);
   }
 }
@@ -492,6 +556,7 @@ void p_play(u8 **bs,u8* stack) {
   u8* sp=stack;
   PSGDrvCh *p = psgdrv;
   track_size = (u8)*bs++;
+  lfo_used=0;
   sound=*bs++;
   for(u8 i=0;i<track_size;i++,p++) {
     p->pc=bs[i]+1;
@@ -504,24 +569,51 @@ void p_play(u8 **bs,u8* stack) {
     sp += bs[i][0]*2;
     p->sla=0;
     p->sus=0;
+    p->lfo=0;
+    p->key=0;
     p->drum= (((u8*)bs)[-3]!=0 && i==6);
   }
 }
 #endif
+// ソフトウェア LFO を 1 フレーム進める (MGSDRV と同じく、音符の処理より先)
+static void p_lfo(PSGDrvCh* ch) {
+  if (--ch->lt) return;
+  ch->lt=ch->lc+1;
+  if (!ch->lcnt) { ch->lstep=-ch->lstep; ch->lcnt=ch->lb+1; } // 三角波の折り返し
+  ch->lcnt--;
+  ch->lval+=ch->lstep;
+  // ずらした F-Number が 172〜344 から出たらブロックをまたぐ (デチューンと同じ)
+  s16 f=(ch->lbase&511)+ch->lval;
+  u8 blk=ch->lbase>>9;
+  while (f<172) { f+=173; blk--; }
+  while (f>=345) { f-=173; blk++; }
+  u8 t=((blk&7)<<1)|(u8)(f>>8)|ch->sus;
+  ch->tone=t;
+  ym2413(ch->no10,(u8)f);
+  ym2413(ch->no20,t|ch->key);
+}
+static void lfo_update(void) {
+  PSGDrvCh *p = psgdrv;
+  u8 i=track_size;
+  do {if (p->lfo) p_lfo(p);p++;} while(--i);
+}
 #ifndef OPT2
 void p_update(void) {
+  if (lfo_used) lfo_update();
   for(u8 i=0;i<track_size;i++) p_exec(&psgdrv[i]);
 }
 #else
 #ifndef OPT3
 void p_update(void) {
   PSGDrvCh *p = psgdrv;
+  if (lfo_used) lfo_update();
   for(u8 i=0;i<track_size;i++,p++) p_exec(p);
 }
 #else
 void p_update(void) {
   PSGDrvCh *p = psgdrv;
   u8 i=track_size;
+  if (lfo_used) lfo_update();
   do {p_exec(p);p++;} while(--i);
 }
 #endif

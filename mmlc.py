@@ -20,6 +20,10 @@ PSLAON="PSLAON"
 PSUSON="PSUSON"
 PSUSOFF="PSUSOFF"
 PTONEF="PTONEF"
+PTONEL="PTONEL"
+PKEYOFFL="PKEYOFFL"
+PLFO="PLFO"
+PLFOOFF="PLFOOFF"
 PDRUMV="PDRUMV"
 PDRUMV1="PDRUMV1"
 PDRUMV2="PDRUMV2"
@@ -216,6 +220,15 @@ def parse_channel(ch,src,drum):
         n=readInt(None); n0=counts.pop() if counts else None
         o(c, n0 if n0 is not None else n if n is not None else 2)
       case "@" | "o" | "v" | "q" | "t": o(c,readInt())
+      case "h": # ソフトウェア LFO。h 遅れ,振れ幅の段数,速さ,1 段の値。hf で止め、ho で動かす
+        if src[pos]=="f": pos+=1; o("hf")
+        elif src[pos]=="o": pos+=1; o("ho")
+        else:
+          vals=[readInt()]
+          for _ in range(3):
+            if src[pos]!=",": fail_at(ch,pos,"h は h 遅れ,振れ幅,速さ,値 の 4 つの数で書く")
+            pos+=1; vals.append(readInt())
+          o("h",*vals)
       case "s":
         if src[pos]=="o": pos+=1; o("so")
         elif src[pos]=="f": pos+=1; o("sf")
@@ -253,7 +266,7 @@ def loop_expand(chs):
   def expand(n,ch):
     name=n # n はループ回数などで上書きされるので、チャンネル名は別に持つ
     G.before+=len(ch)
-    G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=0
+    G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=0; G.lf=(False,None)
     r = []
     stack = []
     i = -1
@@ -268,17 +281,20 @@ def loop_expand(chs):
           case ["o",n]: G.octave=n-1
           case ["@",n]: G.at=n
           case ["\\",n]: G.dt=n
+          case ["h",*prm]: G.lf=(prm[3]!=0,tuple(prm))
+          case ["hf"]: G.lf=(False,G.lf[1])
+          case ["ho"]: G.lf=(G.lf[1] is not None and G.lf[1][3]!=0,G.lf[1])
           case ["drum_v",a,"",n]: G.dv=dict(G.dv); G.dv[a]=int(n)
           case ["drum_v",a,sign,n]: G.dv=dict(G.dv); G.dv[a]=G.dv.get(a,0)+(int(n) if sign=="+" else -int(n))
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
-          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv,G.dt])
+          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv,G.dt,G.lf])
           case ["|"]:
             if not stack: fail(f"チャンネル {name}: | がループの外にある")
-            stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv,G.dt)
+            stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv,G.dt,G.lf)
           case ["]",_] if not stack: fail(f"チャンネル {name}: ] に対応する [ がない")
           case ["]",n]:
-            [start,br,vol,octave,brstate,at,dv,dt]= stack.pop()
+            [start,br,vol,octave,brstate,at,dv,dt,lf]= stack.pop()
             if br == None: br=len(r)
             # オクターブに依存するループか: 本体で o より前に音符か < > がある
             use_octave = False
@@ -295,14 +311,19 @@ def loop_expand(chs):
             for c in r[start+1:]:
               if c[0] == "\\": break
               if c[0] == "tone" and c[1] != "r": use_dt = True; break
+            # LFO に依存するループか: 本体で h・hf・ho より前に音符か休符がある (音符とキーオフの命令が変わる)
+            use_lf = False
+            for c in r[start+1:]:
+              if c[0] in ("h","hf","ho"): break
+              if c[0] == "tone": use_lf = True; break
             # ドラムの楽器ごとの相対音量 (vs+1 など) で 1 周ごとに音量が変わるループも展開する
-            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at) or (use_dt and G.dt != dt) or G.dv != dv) and n!=0: # 状態が違うので展開する
+            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at) or (use_dt and G.dt != dt) or (use_lf and G.lf != lf) or G.dv != dv) and n!=0: # 状態が違うので展開する
               # 展開したあとのオクターブ: 最後の周の | (なければ終わり) の時点の値。
               # オクターブに依存するループなら、1 周の変化 x (n-1) が積み重なる
               # (音量は今までどおり 1 周した後の値のまま。直すと展開が増えるので別に考える)
               bo = brstate[1] if brstate else G.octave
               G.octave = bo+(G.octave-octave)*(n-1) if use_octave else bo
-              if brstate: G.at = brstate[2]; G.dt = brstate[4]
+              if brstate: G.at = brstate[2]; G.dt = brstate[4]; G.lf = brstate[5]
               G.dv = {k: G.dv[k]+(G.dv[k]-dv.get(k,0))*(n-1) for k in G.dv} # 相対の変化は n 周分
               before=len(r)
               loop1=r[start+1:br]
@@ -319,7 +340,7 @@ def loop_expand(chs):
               G.after += after-before
               continue
             # 展開しないループで | があれば、ループのあとは | の時点の状態になる
-            if brstate: G.volume,G.octave,G.at,G.dv,G.dt = brstate
+            if brstate: G.volume,G.octave,G.at,G.dv,G.dt,G.lf = brstate
       r.append(v)
     return r
   r = {}
@@ -342,6 +363,9 @@ def loop_state(tokens, st, drum):
         case [">"] if st["o"]<7: st["o"]+=1
         case ["@",n]: st["at"]=n
         case ["\\",n]: st["dt"]=n
+        case ["h",*prm]: st["lf"]=(prm[3]!=0,tuple(prm))
+        case ["hf"]: st["lf"]=(False,st["lf"][1])
+        case ["ho"]: st["lf"]=(st["lf"][1] is not None and st["lf"][1][3]!=0,st["lf"][1])
         case ["v",n] if drum: st["rv"]=n; st["dv"]={k:n for k in st["dv"]}
         case ["v",n]: st["v"]=n
         case ["v-"|"v+",n] if drum: st["rv"]=min(15,max(0,st["rv"]+n)); st["dv"]={k:st["rv"] for k in st["dv"]}
@@ -399,9 +423,10 @@ def unroll_infinite(name, tokens, drum):
     if uses("v",("v-","v+")): keys.append("v")
     if uses("@",()): keys.append("at")
     if uses("\\",()): keys.append("dt")
+    if uses("h",("hf","ho")) or uses("hf",("h","ho")) or uses("ho",("h","hf")): keys.append("lf")
   if not keys: return tokens
   key=lambda st: tuple(str(st[k]) for k in keys)
-  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"dt":0,"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
+  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"dt":0,"lf":(False,None),"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
   k=0; s0=st
   while True:
     nx=loop_state(body, st, drum)
@@ -411,7 +436,7 @@ def unroll_infinite(name, tokens, drum):
       print(f"warning: {name} 無限ループの状態が 16 周で落ち着かないので展開しない",file=sys.stderr)
       return tokens
   if k==0: return tokens
-  names={"o":"オクターブ","v":"音量","at":"音色","rv":"ドラムの基準の音量","dv":"ドラムの音量","dt":"デチューン"}
+  names={"o":"オクターブ","v":"音量","at":"音色","rv":"ドラムの基準の音量","dv":"ドラムの音量","dt":"デチューン","lf":"LFO"}
   changed=[k for k in keys if str(s0[k])!=str(loop_state(body, s0, drum)[k])]
   print(f"warning: {name} の無限ループは 1 周で {'・'.join(names[k] for k in changed if k!='dv' or 'rv' not in changed)} が変わるので、"
         f"MGSDRV と同じに鳴らすため本体 ({len(body)} コマンド) を {k} 周分展開した (データが大きくなる)",file=sys.stderr)
@@ -439,6 +464,7 @@ def mml_compile(name,chs,loops=2):
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0
+    G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     G.drum_rv=15 # リズムの ( ) の基準になる音量。v と vb などで最後に指定した値 (MGSDRV と同じ)
@@ -491,7 +517,7 @@ def mml_compile(name,chs,loops=2):
                       # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
                       # 0x26〜0x28 がリズムの音程なので書かない
                       if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,a/192)
-                      else: outwait("r",PKEYOFF,PWAIT,a/192)
+                      else: outwait("r",PKEYOFFL if G.lfo_on else PKEYOFF,PWAIT,a/192)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
                       G.drum_rv=b
@@ -505,18 +531,20 @@ def mml_compile(name,chs,loops=2):
                       b=notes[b];w = w/192
                       #print(f"w {w} q {G.q}")
                       outvolume()
-                      if G.detune:
+                      if G.detune or G.lfo_on:
                         # デチューン (MGSDRV と同じ)。F-Number に足して、172〜344 から出たらブロックをまたぐ
+                        # LFO をかける音も音程をデータで持つ (PTONEL)
                         n=b+G.o*12; f=TONES[n%12]+G.detune; blk=n//12
                         while f<172: f+=173; blk-=1
                         while f>=345: f-=173; blk+=1
                         blk&=7
-                        p(PTONEF,f&255,(blk<<1)|(f>>8))
+                        p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
                       else: p(f"/*PTONE,*/{b+G.o*12}")
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
                       outwait(f"tone {b}", False,PWAIT,w*q)
-                      if q!=1: outwait(f"off {b}",PKEYOFF,PKEYOFF,w*(1-q))
+                      ko = PKEYOFFL if G.lfo_on else PKEYOFF # LFO をかけている音はキーの状態を覚える
+                      if q!=1: outwait(f"off {b}",ko,ko,w*(1-q))
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
         case ["o",o]: G.o=o-1
@@ -574,7 +602,7 @@ def mml_compile(name,chs,loops=2):
                       if len(G.stack) == 0 and n1 == 0: G.intro = al
                       if br: # ブレイクアドレス
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
-                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune = brstate
+                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.lfo,G.lfo_on = brstate
                         pos = len(G.r) - br - 2
                         if short_br: G.r[br]= f"{pos}"
                         else:
@@ -591,7 +619,7 @@ def mml_compile(name,chs,loops=2):
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
-                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune)
+                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.lfo,G.lfo_on)
                       p(PBREAK,None,None)
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
@@ -600,6 +628,13 @@ def mml_compile(name,chs,loops=2):
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
         case ["sf"]: p(PSUSOFF)
+        case ["h",a,b,c,d]:
+                      G.lfo=(a,b,c,d)
+                      if d: p(PLFO,a&255,b&255,c&255,d&255); G.lfo_on=True
+                      else: p(PLFOOFF); G.lfo_on=False # 1 段の値が 0 なら動かさない
+        case ["hf"]:  p(PLFOOFF); G.lfo_on=False
+        case ["ho"]:
+                      if G.lfo and G.lfo[3]: a,b,c,d=G.lfo; p(PLFO,a&255,b&255,c&255,d&255); G.lfo_on=True
         case ["\\",n]: G.detune=n
         case v:       fail(f"チャンネル {name}: 対応していない命令 {v}")
     vi = 0
