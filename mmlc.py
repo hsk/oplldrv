@@ -111,7 +111,7 @@ def preprocess(src):
           if w.group(1) not in macrows: fail(f"*{w.group(1)} の macro_offset がない",ln,text)
           return f"*{macrows[w.group(1)]+(int(w.group(2)) if w.group(2) else 0)}"
         v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(macw,m[2].replace(" ",""))
-        for x in m[1]:
+        for x in m[1].upper(): # チャンネル名の小文字は大文字と同じ (MGSDRV と同じ)
           if x not in r or x in "@#": fail(f"チャンネル {x} は使えない (9・A〜H)",ln,text)
           o(x,v); lines[x].append((ln,text))
       else: pos+=1
