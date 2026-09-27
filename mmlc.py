@@ -34,6 +34,20 @@ PBREAKS="PBREAKS"
 TONES=[172,182,194,205,217,230,244,258,273,290,307,325]
 # 細かいデチューン @\n で使う、1 つ上の半音の F-Number (MGSDRV と同じ。b の上は 342)
 NEXT_TONES=[182,194,205,217,230,244,258,273,290,307,325,342]
+def frames(x,w):
+  """全音符が w フレームのとき、x tick までのフレーム数 (四捨五入、0.5 は切り上げ。MGSDRV の表と同じ)"""
+  return (2*x*w+192)//384
+def tokens_ticks(tokens):
+  """命令の列を 1 回鳴らす長さ (tick)。ループは回数分、ブレイク | は最後の周を途中までとして数える"""
+  st=[[0,None]] # [ここまでの長さ, | までの長さ]
+  for v in tokens:
+    if v[0] in ("tone","drum"): st[-1][0]+=v[-1]
+    elif v[0]=="[": st.append([0,None])
+    elif v[0]=="|": st[-1][1]=st[-1][0]
+    elif v[0]=="]":
+      t,br=st.pop(); n=max(v[1],1)
+      st[-1][0]+=t*n if br is None else t*(n-1)+br
+  return st[0][0]
 # エラーは「ファイル名:行: error: 内容」を標準エラーに出して止める (main で受ける)
 class MmlError(Exception): pass
 FILENAME="-"
@@ -529,23 +543,54 @@ def mml_compile(name,chs,loops=2):
     # 全音符のフレーム数。MGSDRV は 60*60*4/テンポ を切り捨てた整数にしてから音符に分けるので同じにする
     # (テンポ 112 は 128.57 ではなく 128 フレーム。書いたテンポより少し速くなる)
     G.t = 60*60*4//(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
-    G.all = 0;G.all2 = 0; G.q=1
-    
-    def outwait(prm, fk,k,a):
+    # G.fr: MGSDRV で鳴らしたときの今のフレーム、G.ph: 全音符 (192 tick) の中の位置 (tick)、
+    # G.all: 出した待ちのフレーム数の合計。ループの外では G.all は G.fr に追いつく
+    G.all = 0; G.fr = 0; G.ph = 0; G.q=1
+
+    def tempo():
+      # テンポ (全音符のフレーム数)。ほかのチャンネルの t も、そのフレームから効く
+      for t1,tm in G.tempos.items():
+        if t1 <= G.fr: G.t = tm
+    def period_dda(ev,fr0,ph0,body):
+      """無限ループの本体 ev (1 周分の音の (tick, テンポ)) を MGSDRV で鳴らしたときに、周の境目に近くなる dda を求める。
+      全音符の中の位置が 1 巡する P 周で足すフレーム数を num/den にし、初期値は境目のずれが一番少ないものにする"""
+      lb=sum(k for k,w in ev)
+      P=192//math.gcd(lb,192)
+      fr,ph=fr0,ph0; ends=[]
+      for i in range(P):
+        for k,w in ev: fr+=frames(ph+k,w)-frames(ph,w); ph=(ph+k)%192
+        ends.append(fr-fr0)
+      extra=ends[-1]-body*P
+      if not 0<=extra<=P: return 0,1,0
+      g=math.gcd(extra,P); num,den=extra//g,P//g
+      if num+den-1>255: return 0,1,0
+      def miss(acc):
+        out=0; m=0
+        for i in range(P):
+          acc+=num; out+=body
+          if acc>=den: acc-=den; out+=1
+          m+=abs(out-ends[i])
+        return m
+      return num,den,min(range(den),key=miss)
+    def advance(k):
+      """k tick 進めて、その長さのフレーム数を返す。
+      MGSDRV はテンポを決めたときに全音符の中の位置 → フレーム数の表 (x tick を四捨五入、0.5 は切り上げ) を作り、
+      音の長さを「全音符の中の位置」から表を引いた差で求める。テンポが変わっても位置はそのまま続く"""
+      tempo()
+      n = frames(G.ph+k,G.t)-frames(G.ph,G.t)
+      G.ph=(G.ph+k)%192; G.fr+=n
+      if G.stack: G.stack[-1]["ev"].append((k,G.t))
+      return n
+    def outwait(prm, fk,k,to):
+      """フレーム to まで待つ。前に出しすぎていれば (G.all > to) 出さない"""
       def p2(a):
         nonlocal fk,k
         if fk: p(fk,a)
         else: p(a)
         fk=k
-      for t1,tm in G.tempos.items():
-        if t1 <= int(G.all2*192): G.t = tm
-
-      diff = G.all2-G.all
-      #if abs(diff) >= 1:print(f"diff {prm} {diff}",file=sys.stderr)
-      f=G.t*a+diff
-      G.all2+=G.t*a
-      n = int(f); G.all += n
-      if n==0: return
+      n = to-G.all
+      if n<=0: return
+      G.all += n
       # ソフトウェアエンベロープ: 待ちを 1 フレームずつに分けて、フレームごとの音量を出す (次のキーオンまで続く)
       while G.env_q and n>0:
         p2(1); n-=1; fk=k=PWAIT
@@ -569,8 +614,9 @@ def mml_compile(name,chs,loops=2):
                       if not G.env and not G.env_q: outvolume()
                       # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
                       # 0x26〜0x28 がリズムの音程なので書かない
-                      if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,a/192)
-                      else: outwait("r",PKEYOFFL if G.lfo_on else PKEYOFF,PWAIT,a/192)
+                      advance(a)
+                      if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,G.fr)
+                      else: outwait("r",PKEYOFFL if G.lfo_on else PKEYOFF,PWAIT,G.fr)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
                       G.drum_rv=b
@@ -581,7 +627,7 @@ def mml_compile(name,chs,loops=2):
         case ["v",b]: G.volume=(15-b)
         case ["tone",b,w]:
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
-                      b=notes[b];w = w/192
+                      b=notes[b]
                       #print(f"w {w} q {G.q}")
                       legato=G.legato; G.legato=False # スラーでつなぐ音はエンベロープをやり直さない
                       if G.env and not legato:
@@ -617,9 +663,11 @@ def mml_compile(name,chs,loops=2):
                       G.lpitch=pitch(b) if G.lfo_on and not porta else None
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
-                      outwait(f"tone {b}", PWAIT if tie else False,PWAIT,w*q)
+                      # キーオフは q で詰めた長さ (正確な長さ x q/8 の切り捨て) のところ
+                      start=G.fr; ln=advance(w); on=ln if q==1 else min(ln,int(w*G.t*q/192))
+                      outwait(f"tone {b}", PWAIT if tie else False,PWAIT,start+on)
                       ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
-                      if q!=1: outwait(f"off {b}",ko,ko,w*(1-q))
+                      if q!=1: outwait(f"off {b}",ko,ko,G.fr)
                       if porta:
                         nn=G.all-all0; qq,rr=divmod(abs(dl),nn) if nn else (0,0)
                         if not 1<=nn<=255: fail(f"チャンネル {name}: ポルタメントの音の長さ {nn} フレームは 1〜255 でないといけない")
@@ -635,7 +683,7 @@ def mml_compile(name,chs,loops=2):
                       if G.o<7:G.o+=1
         case ["<"]:
                       if G.o>0:G.o-=1
-        case ["t",t]: G.t=60*60*4//t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
+        case ["t",t]: G.t=60*60*4//t; G.tempos[G.fr]=G.t; print(f"t {G.fr}",file=sys.stderr)
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]:
                       if f"@{v}" not in G.sounds: fail(f"チャンネル {name}: 音色 @{v} が定義されていない (@v{v} = {{...}})")
@@ -650,15 +698,30 @@ def mml_compile(name,chs,loops=2):
                         elif ch[j][0] in ("@","v","v-","v+","@e"): G.old_volume=-1
                         j+=1
                       if G.env: G.old_volume=-1 # エンベロープで音量が変わるので、2 周目の入口の音量はわからない
-                      diff = max(0,G.all2-G.all) #+0.00000001
-                      G.all+=diff
-                      G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff,None])
+                      # 本体は 1 周分だけ出して、ずれは ] の dda で補う。前に出し足りない・出しすぎた分は、ループのあとの音で直す
+                      st={"l":len(G.r),"all":G.all,"fr":G.fr,"ph":G.ph,"ev":[],"br":None}
+                      G.all=G.fr
+                      # 1 周のフレーム数 lb*W/192 が整数でなければ、MGSDRV は周ごとに切り上げ・切り捨てになる。
+                      # 本体は切り捨てになる周 (何周目かの全音符の中の位置) で出し、端数 num/den を dda で毎周足す。
+                      # dda の初期値をループの入口の位置の端数にすれば、周の境目は MGSDRV と同じフレームになる
+                      # ループの中でテンポが変わる (t がある、ほかのチャンネルの t がかかる) ときは ] で決める
+                      tempo(); n1=ch[j][1] if j<len(ch) else 1; lb=tokens_ticks(ch[vi:j]); r=lb*G.t%192
+                      span=lb*G.t*n1//192+1 if n1 else math.inf
+                      steady=not any(c[0]=="t" for c in ch[vi:j]) and not any(G.fr<t1<=G.fr+span for t1 in G.tempos)
+                      if n1!=1 and r and steady:
+                        g=math.gcd(r,192); num,den=r//g,192//g
+                        if num+den-1<=255: # dda は 8 ビットで足す
+                          st["dda"]=(num,den,(2*G.ph*G.t+192)%384*den//384)
+                          for k in range(den):
+                            ph=(G.ph+lb*k)%192
+                            if frames(ph+lb,G.t)-frames(ph,G.t)==lb*G.t//192: G.ph=ph; break
+                      G.stack.append(st)
                       G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
         case ["]",n]: # n回ループする
                       if not G.stack: fail(f"チャンネル {name}: ] に対応する [ がない")
                       n1=n
                       if n<2:n=1
-                      [l,al,al2,br,bral,bral2,diff,brstate]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
+                      st=G.stack.pop(); l=st["l"]; br=st["br"]; G.r[l+2]=f"{n1}"
                       # ブレイクの飛び先 (PNEXT の dda の位置) が 255 バイト以内なら 1 バイトの PBREAKS にする。
                       # PNEXT を長い形 (飛び先の dda が len+3) にしたときの距離で決める。短くなれば距離も縮むので収まる
                       short_br = br is not None and len(G.r)+2-br <= 255
@@ -667,26 +730,31 @@ def mml_compile(name,chs,loops=2):
                       off = l-len(G.r)
                       if off >= -128: p(PNEXTS, off&255)
                       else: p(PNEXT); nn=(l-len(G.r))&0xffff; p(nn&255,nn>>8)
-                      n-=1
-                      if br: n-=1
-                      G.all2+=(G.all2-al2)*n; G.all+=(G.all-al)*n
-                      if br: G.all+=bral;G.all2+=bral2
-                      G.all-=diff
-                      diff=G.all2-G.all
-                      diff1=int(diff)
-                      G.all+=diff1
-                      if len(G.stack) == 0:
-                        G.all = int(G.all+0.00000001)
-                        diff1 = int(diff+0.00000001)
-                      # dda: 1 周ごとに diff1 を足し、n1 以上になったら 1 フレーム待つ (n1 周で diff1 フレーム)。
-                      # 無限ループ (n1=0) は 1 周を 1 回と数えるので 1。0 だと毎周 1 フレーム余計に待ってしまう
-                      p(diff1,n1 if n1 else 1)
-                      print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
-                      #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
-                      if len(G.stack) == 0 and n1 == 0: G.intro = al
+                      # 出した待ち: 1 周分 x 回数 (| があれば最後の周は | まで)
+                      body=G.all-st["fr"]
+                      out=body*(n-1)+st["bral"] if br else body*n
+                      # MGSDRV で鳴らしたときの位置: ループの入口の位置から、本体の音を回数分進める
+                      ev=st["ev"]; ev=ev*(n-1)+ev[:st["brn"]] if br else ev*n
+                      fr,ph=st["fr"],st["ph"]
+                      for k,w in ev: fr+=frames(ph+k,w)-frames(ph,w); ph=(ph+k)%192
+                      # dda: 初期値 acc から 1 周ごとに num を足し、den 以上になったら den を引いて 1 フレーム待つ
+                      if "dda" in st: num,den,acc=st["dda"]
+                      else:
+                        # 1 周が整数フレームなら足さない。8 ビットに収まらない端数は、n1 周で合計が合うように足す
+                        # (無限ループ (n1=0) は den=1。0 だと毎周 1 フレーム余計に待ってしまう)
+                        num=min(max(0,fr-st["fr"]-out),n) if n1 else 0; den=max(n1,1); acc=den>>1
+                        if n1==0: num,den,acc=period_dda(st["ev"],st["fr"],st["ph"],body)
+                      p(num,den); G.r[l+1]=f"{acc}"
+                      for k in range(n):
+                        acc+=num
+                        if acc>=den: acc-=den; out+=1
+                      print(f"  [ {body} ]{n1} {num}/{den} {fr-st['fr']-out}",file=sys.stderr)
+                      G.all=st["all"]+out; G.fr=fr; G.ph=ph
+                      if G.stack: G.stack[-1]["ev"].extend(ev)
+                      if len(G.stack) == 0 and n1 == 0: G.intro = st["fr"]
                       if br: # ブレイクアドレス
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
-                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on = brstate
+                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on = st["brstate"]
                         pos = len(G.r) - br - 2
                         if short_br: G.r[br]= f"{pos}"
                         else:
@@ -699,13 +767,14 @@ def mml_compile(name,chs,loops=2):
         case ["|"]:
                       #print("|",file=sys.stderr)
                       if not G.stack: fail(f"チャンネル {name}: | がループの外にある")
-                      if G.stack[-1][3] != None: fail(f"チャンネル {name}: 1 つのループに | が 2 つある")
-                      G.stack[-1][3]=len(G.r)+1
-                      G.stack[-1][4]=G.all-G.stack[-1][1]
-                      G.stack[-1][5]=G.all2-G.stack[-1][2]
-                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on)
+                      st=G.stack[-1]
+                      if st["br"] != None: fail(f"チャンネル {name}: 1 つのループに | が 2 つある")
+                      st["br"]=len(G.r)+1
+                      st["bral"]=G.all-st["fr"] # | までに出した待ち
+                      st["brn"]=len(st["ev"])   # | までの音の数
+                      st["brstate"]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on)
                       p(PBREAK,None,None)
-        case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
+        case ["drum",v,w]: out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");advance(w);outwait(f"drum {v}",None,PWAIT,G.fr)
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
         case ["drum_v",a,"-",n]: G.drum_v[a]=max(0,G.drum_v[a]-int(n))
         case ["drum_v",a,"",n]: G.drum_v[a]=int(n); G.drum_rv=int(n)
@@ -739,10 +808,10 @@ def mml_compile(name,chs,loops=2):
     split=",\n  "
     print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {split.join(G.r)}}};")
     G.all_len += len(G.r)
-    print(f"{n} all {G.all} {G.all2}",file=sys.stderr)
+    print(f"{n} all {G.all} {G.fr}",file=sys.stderr)
     # 演奏時間: 無限ループならイントロ + 本体 x loops、なければ最後まで
-    frames = G.all if G.intro is None else G.intro + (G.all-G.intro)*loops
-    G.frames = max(G.frames, math.ceil(frames))
+    fr = G.fr if G.intro is None else G.intro + (G.fr-G.intro)*loops
+    G.frames = max(G.frames, fr)
     
   d = list(map(lambda i:f'{name}_{i},',range(i+1)))
   if "F" in G.n2i and G.n2i["F"]!=6:
