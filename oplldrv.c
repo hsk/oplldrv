@@ -614,6 +614,7 @@ void p_play(u8 **bs,u8* stack) {
   }
 }
 #endif
+#ifndef OPT
 // ソフトウェア LFO を 1 フレーム進める (MGSDRV と同じく、音符の処理より先)
 static void p_lfo(PSGDrvCh* ch) {
   if (--ch->lt) return;
@@ -657,6 +658,87 @@ static void lfo_update(void) {
   u8 i=track_size;
   do {if (p->pn) p_porta(p); else if (p->lfo) p_lfo(p);p++;} while(--i);
 }
+#else
+// LFO・ポルタメントを 1 フレーム進める (アセンブラ版。C 版と同じことをする)
+static void lfo_update(void) __naked {
+  __asm
+  push ix
+  ld ix,#_psgdrv
+  ld a,(_track_size) $ ld b,a
+  1$: ; do {
+    ld a,IX(P_PN) $ or a $ jp nz, 20$ ; if (p->pn) p_porta(p);
+    ld a,IX(P_LFO) $ or a $ jp z, 9$ ; else if (p->lfo) p_lfo(p);
+    ; p_lfo
+    dec IX(P_LT) $ jp nz, 9$ ; if (--ch->lt) return;
+    ld a,IX(P_LC) $ inc a $ ld IX(P_LT),a ; ch->lt=ch->lc+1;
+    ld a,IX(P_LCNT) $ or a $ jr nz, 2$ ; if (!ch->lcnt) {
+      ld a,IX(P_LSTEP) $ neg $ ld IX(P_LSTEP),a ; ch->lstep=-ch->lstep;
+      ld a,IX(P_LB) $ inc a ; ch->lcnt=ch->lb+1;
+    2$: ; }
+    dec a $ ld IX(P_LCNT),a ; ch->lcnt--;
+    ld a,IX(P_LSTEP) $ ld e,a $ rla $ sbc a,a $ ld d,a ; de = (s16)ch->lstep
+    ld l,IX(P_LVAL) $ ld h,IX(P_LVAL+1) $ add hl,de
+    ld IX(P_LVAL),l $ ld IX(P_LVAL+1),h ; ch->lval+=ch->lstep;
+    ld e,IX(P_LBASE) $ ld a,IX(P_LBASE+1) $ ld c,a $ and #1 $ ld d,a
+    add hl,de ; f=(ch->lbase&511)+ch->lval;
+    srl c ; blk=ch->lbase>>9;
+    call 50$
+    jp 9$
+  20$: ; p_porta: 始め + floor(|差| * k / N) を dda で求める
+    ld a,IX(P_PERR) $ add a,IX(P_PR) $ ld l,a $ ld a,#0 $ adc a,a $ ld h,a ; e=ch->perr+ch->pr (16 ビット)
+    ld d,IX(P_PQ) ; d=ch->pq;
+    ld e,IX(P_PNN)
+    ld a,h $ or a $ jr nz, 21$ ; if (e>=ch->pnn) {
+    ld a,l $ cp e $ jr c, 22$
+    21$: ld a,l $ sub e $ ld l,a ; e-=ch->pnn;
+      inc d ; d++;
+    22$: ; }
+    ld IX(P_PERR),l ; ch->perr=e;
+    ld e,d $ ld d,#0
+    ld l,IX(P_PF) $ ld h,IX(P_PF+1)
+    ld a,IX(P_PDIR) $ or a $ jr z, 23$ ; if (ch->pdir) ch->pf-=d; else ch->pf+=d;
+      sbc hl,de $ jr 24$ ; or a で キャリーは 0
+    23$: add hl,de
+    24$:
+    ld c,IX(P_PBLK)
+    call 50$
+    ld IX(P_PF),l $ ld IX(P_PF+1),h
+    ld a,c $ and #7 $ ld IX(P_PBLK),a ; ch->pblk&=7;
+    dec IX(P_PN) $ jp nz, 9$ ; if (!--ch->pn) {
+      ; 終わったら、LFO を目標の音程から遅れの分やり直す
+      ld IX(P_LBASE),l $ add a,a $ or h $ ld IX(P_LBASE+1),a ; ch->lbase=(pblk<<9)|pf;
+      ld a,IX(P_LA) $ add a,IX(P_LC) $ add a,#2 $ ld IX(P_LT),a ; ch->lt=ch->la+ch->lc+2;
+      xor a $ ld IX(P_LVAL),a $ ld IX(P_LVAL+1),a ; ch->lval=0;
+      ld a,IX(P_LD) $ ld IX(P_LSTEP),a ; ch->lstep=ch->ld;
+      ld a,IX(P_LB) $ srl a $ adc a,#0 $ ld IX(P_LCNT),a ; ch->lcnt=(lb+1)>>1;
+    ; }
+  9$:
+    ld de,#P_SIZE $ add ix,de ; p++
+    dec b $ jp nz, 1$ ; } while(--i);
+  pop ix
+  ret
+  50$: ; hl = F-Number (符号付き)、c = ブロック。172〜344 に収めてからレジスタに書く
+    bit 7,h $ jr nz, 52$ ; 負なら 172 より小さい
+    ld a,h $ or a $ jr nz, 51$
+    ld a,l $ cp #172 $ jr c, 52$ ; while (f<172) {
+    jr 53$
+    51$: ; h>=1
+    ld a,h $ dec a $ jr nz, 54$ ; h>=2 なら 345 以上
+    ld a,l $ cp #0x59 $ jr c, 55$ ; 0x159 = 345
+    54$: ld de,#-173 $ add hl,de $ inc c $ jr 50$ ; f-=173; blk++;
+    52$: ld de,#173 $ add hl,de $ dec c $ jr 50$ ; f+=173; blk--;
+    53$:
+    55$:
+    ld a,c $ and #7 $ add a,a $ or h $ or IX(P_SUS) $ ld IX(P_TONE),a ; ch->tone=t;
+    ld e,a
+    ld a,IX(P_NO10) $ out (_IOPortOPLL1), a
+    ld a,l $ out (_IOPortOPLL2), a
+    ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
+    ld a,e $ or IX(P_KEY) $ out (_IOPortOPLL2), a
+    ret
+  __endasm;
+}
+#endif
 #ifndef OPT2
 void p_update(void) {
   if (lfo_used) lfo_update();
