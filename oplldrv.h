@@ -29,6 +29,15 @@ typedef struct PSGDrvCh {
   s8 lstep; // 今の向きの 1 段 (±ld)
   s16 lval; // 今の F-Number のずれ
   u16 lbase;// 音の音程 (block<<9 | F-Number)
+  // ポルタメント (c_e4)。PPORTA で始め、N フレームかけて目標の音程まで動かす
+  u8 pn;    // 残りのフレーム数。0 なら動かしていない
+  u8 pq;    // 1 フレームで動かす F-Number の整数部 (|差| / N)
+  u8 pr;    // 余り (|差| % N)。dda で N フレームに r 回、もう 1 動かす
+  u8 pnn;   // N
+  u8 perr;  // dda の累積
+  u8 pdir;  // 1 なら下げる
+  s16 pf;   // 今の F-Number (172〜344)
+  u8 pblk;  // 今のブロック
 } PSGDrvCh;
 #define P_WAIT 0
 #define P_PC   1
@@ -51,7 +60,15 @@ typedef struct PSGDrvCh {
 #define P_LSTEP 20
 #define P_LVAL 21
 #define P_LBASE 23
-#define P_SIZE 25
+#define P_PN   25
+#define P_PQ   26
+#define P_PR   27
+#define P_PNN  28
+#define P_PERR 29
+#define P_PDIR 30
+#define P_PF   31
+#define P_PBLK 33
+#define P_SIZE 34
 #define IX(x) x(ix)
 
 #define PDRUM   0x60
@@ -77,6 +94,7 @@ typedef struct PSGDrvCh {
 #define PKEYOFFL 0x92 // LFO をかけている音のキーオフ。PKEYOFF と同じ形で、キーの状態を覚える
 #define PLFO    0x93 // LFO を設定して動かす。遅れ、振れ幅の段数、速さ、1 段の値
 #define PLFOOFF 0x94 // LFO を止める
+#define PPORTA  0x95 // ポルタメント。始めの F-Number の下位 8 ビット、ブロック<<1 と上位 1 ビット、q、r、N、向き、長さ
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);

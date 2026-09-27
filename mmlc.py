@@ -24,6 +24,7 @@ PTONEL="PTONEL"
 PKEYOFFL="PKEYOFFL"
 PLFO="PLFO"
 PLFOOFF="PLFOOFF"
+PPORTA="PPORTA"
 PDRUMV="PDRUMV"
 PDRUMV1="PDRUMV1"
 PDRUMV2="PDRUMV2"
@@ -204,6 +205,9 @@ def parse_channel(ch,src,drum):
           case "#": c+="+"; pos += 1
           case "+": c+="+"; pos += 1
           case "-": c+="-"; pos += 1
+        if src[pos]=="_" and c!="r":
+          # ポルタメント c_e4: 始めの音には長さを書かない。_ のあとの < > はふつうのオクターブ変更
+          pos+=1; o("tone_p",c); continue
         ln=readLen(c,l)
         #if ln > 256: print("invalid length"); err()
         o("tone",c,ln)
@@ -300,7 +304,7 @@ def loop_expand(chs):
             use_octave = False
             for c in r[start+1:]:
               if c[0] == "o": break
-              if c[0] in ("<",">") or (c[0] == "tone" and c[1] != "r"): use_octave = True; break
+              if c[0] in ("<",">","tone_p") or (c[0] == "tone" and c[1] != "r"): use_octave = True; break
             # 音色に依存するループか: 本体で @ より前に音符がある
             use_at = False
             for c in r[start+1:]:
@@ -465,6 +469,7 @@ def mml_compile(name,chs,loops=2):
     G.old_volume=15; G.r = []; G.at = 1
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
+    G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     G.drum_rv=15 # リズムの ( ) の基準になる音量。v と vb などで最後に指定した値 (MGSDRV と同じ)
@@ -509,6 +514,12 @@ def mml_compile(name,chs,loops=2):
       if n==0: return
       while n>=256: p2(0);n-=256
       if n!=0: p2(n)
+    def pitch(b):
+      # 音 (0〜11) の音程 (ブロック, F-Number)。デチューンを足して、172〜344 から出たらブロックをまたぐ
+      n=b+G.o*12; f=TONES[n%12]+G.detune; blk=n//12
+      while f<172: f+=173; blk-=1
+      while f>=345: f-=173; blk+=1
+      return blk&7,f
     def cmd_compile(name,v):
       nonlocal vi
       match v:
@@ -531,20 +542,33 @@ def mml_compile(name,chs,loops=2):
                       b=notes[b];w = w/192
                       #print(f"w {w} q {G.q}")
                       outvolume()
-                      if G.detune or G.lfo_on:
+                      porta=G.porta; G.porta=None; pi=None
+                      if porta:
+                        # ポルタメント: 始めの音程から N フレームかけてこの音へ。1 フレームに |差|/N ずつ (余りは dda)
+                        blk,f=pitch(b)
+                        dl=(blk*173+f)-(porta[0]*173+porta[1])
+                        pi=len(G.r)+3
+                        p(PPORTA,porta[1]&255,(porta[0]<<1)|(porta[1]>>8),0,0,0,1 if dl<0 else 0)
+                        all0=G.all
+                      elif G.detune or G.lfo_on:
                         # デチューン (MGSDRV と同じ)。F-Number に足して、172〜344 から出たらブロックをまたぐ
                         # LFO をかける音も音程をデータで持つ (PTONEL)
-                        n=b+G.o*12; f=TONES[n%12]+G.detune; blk=n//12
-                        while f<172: f+=173; blk-=1
-                        while f>=345: f-=173; blk+=1
-                        blk&=7
+                        blk,f=pitch(b)
                         p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
                       else: p(f"/*PTONE,*/{b+G.o*12}")
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
                       outwait(f"tone {b}", False,PWAIT,w*q)
-                      ko = PKEYOFFL if G.lfo_on else PKEYOFF # LFO をかけている音はキーの状態を覚える
+                      ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
                       if q!=1: outwait(f"off {b}",ko,ko,w*(1-q))
+                      if porta:
+                        nn=G.all-all0; qq,rr=divmod(abs(dl),nn) if nn else (0,0)
+                        if not 1<=nn<=255: fail(f"チャンネル {name}: ポルタメントの音の長さ {nn} フレームは 1〜255 でないといけない")
+                        if qq>255: fail(f"チャンネル {name}: ポルタメントの音程の差が大きすぎる (1 フレームに {qq})")
+                        G.r[pi],G.r[pi+1],G.r[pi+2]=f"{qq}",f"{rr}",f"{nn}"
+        case ["tone_p",b]:
+                      notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11}
+                      G.porta=pitch(notes[b])
         case ["l",l]: G.l=l
         case ["q",q]: G.q=q/8
         case ["o",o]: G.o=o-1

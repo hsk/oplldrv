@@ -5,7 +5,7 @@
 
 u8* sound;
 PSGDrvCh psgdrv[9];
-u8 lfo_used; // PLFO を 1 度でも実行したら 1。0 の間はフレームごとの LFO の処理をしない
+u8 lfo_used; // PLFO か PPORTA を 1 度でも実行したら 1。0 の間はフレームごとの LFO・ポルタメントの処理をしない
 __sfr __at 0xF0 IOPortOPLL1;
 __sfr __at 0xF1 IOPortOPLL2;
 
@@ -125,7 +125,7 @@ void p_exec(PSGDrvCh* ch) {
     case PKEYOFF: ym2413(ch->no20,ch->tone);
     case PWAIT: a=*ch->pc++;ch->wait=a; return;
     case PVOLUME: a=*ch->pc++; ym2413(ch->no30, a); break;
-    case PEND:  ch->pc--; ch->wait=0;ch->lfo=0;ym2413(ch->no20,0); return;
+    case PEND:  ch->pc--; ch->wait=0;ch->lfo=0;ch->pn=0;ym2413(ch->no20,0); return;
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext; // 飛び先が近いときの 1 バイトの形
     case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
@@ -223,6 +223,23 @@ void p_exec(PSGDrvCh* ch) {
                 ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
                 break;
     case PLFOOFF: ch->lfo=0; break;
+    case PPORTA:{ // ポルタメント。始めの音程で鳴らし、フレームごとの処理で目標まで動かす
+                  if (!ch->sla) {
+                    ym2413(ch->no20,0);
+                  }
+                  ch->sla=0;
+                  ch->key=0x10;
+                  u8 lo=*ch->pc++; u8 hi=*ch->pc++;
+                  ch->pf=lo|((u16)(hi&1)<<8); ch->pblk=hi>>1;
+                  ch->pq=*ch->pc++; ch->pr=*ch->pc++; ch->pnn=ch->pn=*ch->pc++; ch->pdir=*ch->pc++;
+                  ch->perr=0; lfo_used=1;
+                  ym2413(ch->no10,lo);
+                  a = hi|ch->sus;
+                  ch->tone=a;
+                  ym2413(ch->no20,(1<<4)|a);
+                  a=*ch->pc++;ch->wait=a;
+                  return;
+                }
     case PTONEF:{ // デチューンした音。音程をデータで持つ
                   if (!ch->sla) {
                     ym2413(ch->no20,0);
@@ -276,7 +293,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PSUSON $ jp c,11$ $ jp z,14$
       cp #PTONEF $ jp c,20$ $ jp z,21$
       cp #PKEYOFFL $ jp c,22$ $ jp z,23$
-      cp #PLFOOFF $ jp c,24$ $ jp 25$
+      cp #PLFOOFF $ jp c,24$ $ jp z,25$ $ jp 26$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -317,6 +334,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       jp 1$; break;
     7$: dec hl $ ld IX(P_WAIT),#0 ; case PEND:  ch->pc--;
       ld IX(P_LFO),#0 ; ch->lfo=0
+      ld IX(P_PN),#0 ; ch->pn=0
       ; ym2413(ch->no20,0)
       ld a,IX(P_NO20) $ out (_IOPortOPLL1), a
       xor a $ out	(_IOPortOPLL2), a
@@ -491,6 +509,25 @@ void p_exec(PSGDrvCh* ch) __naked {
     25$: ; case PLFOOFF:
       ld IX(P_LFO),#0
       jp 1$
+    26$: ; case PPORTA: 始めの音程で鳴らし、フレームごとの処理で目標まで動かす
+      ld a,IX(P_NO20) $ ld c,a
+      xor a $ cp IX(P_SLA) $ jp nz, 261$; if (!ch->sla) {
+        ld a,c $ out (_IOPortOPLL1), a
+        xor a $ out (_IOPortOPLL2), a
+      261$: ; }
+      ld IX(P_SLA),#0 ; ch->sla=0
+      ld IX(P_KEY),#0x10 ; ch->key=0x10
+      ld e,l $ ld d,h ; de = 始めの音程の 2 バイト
+      ld a,(hl) $ inc hl $ ld IX(P_PF),a
+      ld a,(hl) $ inc hl $ ld b,a $ and #1 $ ld IX(P_PF+1),a
+      ld a,b $ srl a $ ld IX(P_PBLK),a
+      ld a,(hl) $ inc hl $ ld IX(P_PQ),a
+      ld a,(hl) $ inc hl $ ld IX(P_PR),a
+      ld a,(hl) $ inc hl $ ld IX(P_PNN),a $ ld IX(P_PN),a
+      ld a,(hl) $ inc hl $ ld IX(P_PDIR),a
+      ld IX(P_PERR),#0
+      ld a,#1 $ ld (_lfo_used),a
+      jp 32$
     18$: ; case PDRUMV2: 0x37 と 0x38 に同じ音量を書く
       ld a,#0x37 $ out (_IOPortOPLL1), a
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a $ ld c,a
@@ -546,6 +583,7 @@ void p_play(u8 **bs,u8*stack) {
     psgdrv[i].sla=0;
     psgdrv[i].sus=0;
     psgdrv[i].lfo=0;
+    psgdrv[i].pn=0;
     psgdrv[i].key=0;
     psgdrv[i].drum= (((u8*)bs)[-3]!=0 && i==6);
   }
@@ -570,6 +608,7 @@ void p_play(u8 **bs,u8* stack) {
     p->sla=0;
     p->sus=0;
     p->lfo=0;
+    p->pn=0;
     p->key=0;
     p->drum= (((u8*)bs)[-3]!=0 && i==6);
   }
@@ -592,10 +631,31 @@ static void p_lfo(PSGDrvCh* ch) {
   ym2413(ch->no10,(u8)f);
   ym2413(ch->no20,t|ch->key);
 }
+// ポルタメントを 1 フレーム進める。始め + floor(|差| * k / N) を dda で求める (MGSDRV と同じ)
+static void p_porta(PSGDrvCh* ch) {
+  u16 e=ch->perr+ch->pr;
+  u8 d=ch->pq;
+  if (e>=ch->pnn) { e-=ch->pnn; d++; }
+  ch->perr=(u8)e;
+  if (ch->pdir) ch->pf-=d; else ch->pf+=d;
+  while (ch->pf<172) { ch->pf+=173; ch->pblk--; }
+  while (ch->pf>=345) { ch->pf-=173; ch->pblk++; }
+  ch->pblk&=7;
+  u8 t=(ch->pblk<<1)|(u8)(ch->pf>>8)|ch->sus;
+  ch->tone=t;
+  ym2413(ch->no10,(u8)ch->pf);
+  ym2413(ch->no20,t|ch->key);
+  if (!--ch->pn) {
+    // 終わったら、LFO を目標の音程から遅れの分やり直す (ポルタメントの間は LFO を止めている)
+    ch->lbase=((u16)ch->pblk<<9)|ch->pf;
+    ch->lt=ch->la+ch->lc+2;
+    ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
+  }
+}
 static void lfo_update(void) {
   PSGDrvCh *p = psgdrv;
   u8 i=track_size;
-  do {if (p->lfo) p_lfo(p);p++;} while(--i);
+  do {if (p->pn) p_porta(p); else if (p->lfo) p_lfo(p);p++;} while(--i);
 }
 #ifndef OPT2
 void p_update(void) {
