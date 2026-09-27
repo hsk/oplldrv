@@ -663,8 +663,10 @@ def mml_compile(name,chs,loops=2):
                       G.lpitch=pitch(b) if G.lfo_on and not porta else None
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
-                      # キーオフは q で詰めた長さ (正確な長さ x q/8 の切り捨て) のところ
-                      start=G.fr; ln=advance(w); on=ln if q==1 else min(ln,int(w*G.t*q/192))
+                      # キーオフは q で詰めた長さのところ。MGSDRV は音のフレーム数 ln から floor(ln*q/8) を
+                      # 16 ビットで求める (ln*8*q を 16 ビットで計算して 6 ビット右へ)。0 なら 1。q0 はキーオフしない
+                      start=G.fr; ln=advance(w); q8=round(q*8)
+                      on=ln if q8 in (0,8) else min(ln,max(1,(ln*8*q8&0xffff)>>6))
                       outwait(f"tone {b}", PWAIT if tie else False,PWAIT,start+on)
                       ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
                       if q!=1: outwait(f"off {b}",ko,ko,G.fr)
