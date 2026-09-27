@@ -32,6 +32,8 @@ PNEXTS="PNEXTS"
 PBREAKS="PBREAKS"
 # ドライバの音程表と同じ F-Number (o4a = 290)
 TONES=[172,182,194,205,217,230,244,258,273,290,307,325]
+# 細かいデチューン @\n で使う、1 つ上の半音の F-Number (MGSDRV と同じ。b の上は 342)
+NEXT_TONES=[182,194,205,217,230,244,258,273,290,307,325,342]
 # エラーは「ファイル名:行: error: 内容」を標準エラーに出して止める (main で受ける)
 class MmlError(Exception): pass
 FILENAME="-"
@@ -240,6 +242,10 @@ def parse_channel(ch,src,drum):
         n=readInt(None); n0=counts.pop() if counts else None
         o(c, n0 if n0 is not None else n if n is not None else 2)
       case "@" if src[pos]=="e": pos+=1; o("@e",readInt()) # ソフトウェアエンベロープ。@e0 で止める
+      case "@" if src[pos]=="\\": # 細かいデチューン @\n (0〜255。255 で半音)
+        pos+=1; n=readInt()
+        if not 0<=n<=255: fail_at(ch,pos-1,f"@\\ の値 {n} は 0〜255")
+        o("@\\",n)
       case "@" | "o" | "v" | "q" | "t": o(c,readInt())
       case "h": # ソフトウェア LFO。h 遅れ,振れ幅の段数,速さ,1 段の値。hf で止め、ho で動かす
         if src[pos]=="f": pos+=1; o("hf")
@@ -287,7 +293,7 @@ def loop_expand(chs):
   def expand(n,ch):
     name=n # n はループ回数などで上書きされるので、チャンネル名は別に持つ
     G.before+=len(ch)
-    G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=0; G.lf=(False,None)
+    G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=(0,0); G.lf=(False,None) # G.dt は (\, @\)
     r = []
     stack = []
     i = -1
@@ -301,7 +307,8 @@ def loop_expand(chs):
           case ["v+",n]:G.volume+=n
           case ["o",n]: G.octave=n-1
           case ["@",n]: G.at=n
-          case ["\\",n]: G.dt=n
+          case ["\\",n]: G.dt=(n,G.dt[1])
+          case ["@\\",n]: G.dt=(G.dt[0],n)
           case ["h",*prm]: G.lf=(prm[3]!=0,tuple(prm))
           case ["hf"]: G.lf=(False,G.lf[1])
           case ["ho"]: G.lf=(G.lf[1] is not None and G.lf[1][3]!=0,G.lf[1])
@@ -327,10 +334,10 @@ def loop_expand(chs):
             for c in r[start+1:]:
               if c[0] == "@": break
               if c[0] == "tone" and c[1] != "r": use_at = True; break
-            # デチューンに依存するループか: 本体で \ より前に音符がある
+            # デチューンに依存するループか: 本体で \ か @\ より前に音符がある
             use_dt = False
             for c in r[start+1:]:
-              if c[0] == "\\": break
+              if c[0] in ("\\","@\\"): break
               if c[0] == "tone" and c[1] != "r": use_dt = True; break
             # LFO に依存するループか: 本体で h・hf・ho より前に音符か休符がある (音符とキーオフの命令が変わる)
             use_lf = False
@@ -383,7 +390,8 @@ def loop_state(tokens, st, drum):
         case ["<"] if st["o"]>0: st["o"]-=1
         case [">"] if st["o"]<7: st["o"]+=1
         case ["@",n]: st["at"]=n
-        case ["\\",n]: st["dt"]=n
+        case ["\\",n]: st["dt"]=(n,st["dt"][1])
+        case ["@\\",n]: st["dt"]=(st["dt"][0],n)
         case ["h",*prm]: st["lf"]=(prm[3]!=0,tuple(prm))
         case ["hf"]: st["lf"]=(False,st["lf"][1])
         case ["ho"]: st["lf"]=(st["lf"][1] is not None and st["lf"][1][3]!=0,st["lf"][1])
@@ -443,11 +451,11 @@ def unroll_infinite(name, tokens, drum):
   else:
     if uses("v",("v-","v+")): keys.append("v")
     if uses("@",()): keys.append("at")
-    if uses("\\",()): keys.append("dt")
+    if uses("\\",("@\\",)) or uses("@\\",("\\",)): keys.append("dt")
     if uses("h",("hf","ho")) or uses("hf",("h","ho")) or uses("ho",("h","hf")): keys.append("lf")
   if not keys: return tokens
   key=lambda st: tuple(str(st[k]) for k in keys)
-  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"dt":0,"lf":(False,None),"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
+  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"dt":(0,0),"lf":(False,None),"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
   k=0; s0=st
   while True:
     nx=loop_state(body, st, drum)
@@ -484,7 +492,7 @@ def mml_compile(name,chs,loops=2):
     G.n2i[n]=i
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
-    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0
+    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0; G.fine=0 # \ と @\
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
     G.env=None; G.env_q=[] # ソフトウェアエンベロープと、まだ出していないフレームの 0x30 の値
@@ -540,7 +548,9 @@ def mml_compile(name,chs,loops=2):
       if n!=0: p2(n)
     def pitch(b):
       # 音 (0〜11) の音程 (ブロック, F-Number)。デチューンを足して、172〜344 から出たらブロックをまたぐ
-      n=b+G.o*12; f=TONES[n%12]+G.detune; blk=n//12
+      # @\n は 1 つ上の半音との差の (n+1)/256 を足す (MGSDRV と同じ)
+      n=b+G.o*12; t=n%12; blk=n//12
+      f=TONES[t]+((NEXT_TONES[t]-TONES[t])*(G.fine+1)>>8)+G.detune
       while f<172: f+=173; blk-=1
       while f>=345: f-=173; blk+=1
       return blk&7,f
@@ -586,8 +596,8 @@ def mml_compile(name,chs,loops=2):
                         pi=len(G.r)+3
                         p(PPORTA,porta[1]&255,(porta[0]<<1)|(porta[1]>>8),0,0,0,1 if dl<0 else 0)
                         all0=G.all
-                      elif G.detune or G.lfo_on:
-                        # デチューン (MGSDRV と同じ)。F-Number に足して、172〜344 から出たらブロックをまたぐ
+                      elif G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12]):
+                        # デチューンで音程表と違う音は、音程をデータで持つ (PTONEF)。172〜344 から出たらブロックをまたぐ
                         # LFO をかける音も音程をデータで持つ (PTONEL)
                         blk,f=pitch(b)
                         p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
@@ -663,7 +673,7 @@ def mml_compile(name,chs,loops=2):
                       if len(G.stack) == 0 and n1 == 0: G.intro = al
                       if br: # ブレイクアドレス
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
-                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.lfo,G.lfo_on = brstate
+                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on = brstate
                         pos = len(G.r) - br - 2
                         if short_br: G.r[br]= f"{pos}"
                         else:
@@ -680,7 +690,7 @@ def mml_compile(name,chs,loops=2):
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
-                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.lfo,G.lfo_on)
+                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on)
                       p(PBREAK,None,None)
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
@@ -701,6 +711,7 @@ def mml_compile(name,chs,loops=2):
         case ["ho"]:
                       if G.lfo and G.lfo[3]: a,b,c,d=G.lfo; p(PLFO,a&255,b&255,c&255,d&255); G.lfo_on=True
         case ["\\",n]: G.detune=n
+        case ["@\\",n]: G.fine=n
         case v:       fail(f"チャンネル {name}: 対応していない命令 {v}")
     vi = 0
     while vi<len(ch):
