@@ -126,9 +126,25 @@ def conv_voice(dt):
   d[3]|= ((dt[23]&1)<<4)  
   return d
   
+ENVS={} # ソフトウェアエンベロープ @e (番号 → 1 フレームごとの [音色の変更, 音量 0〜15] の並び)
+def parse_env(n,src):
+  """@e8={,,@13ffe@7fed} のデータを読む。16 進 1 文字が 1 フレームの音量 (f が v の音量)、@n は音色の変更 (フレームを使わない)"""
+  prm=src.split(",")
+  if len(prm)!=3 or prm[0] or prm[1]: fail(f"@e{n} = {{{src}}}: {{,,データ}} の形だけ使える (前の 2 つの数は未対応)")
+  r=[]; at=None; d=prm[2]; i=0
+  while i<len(d):
+    m=re.match("@([0-9]+)",d[i:])
+    if m:
+      if int(m[1])>=15: fail(f"@e{n}: エンベロープの中の音色 @{m[1]} は内蔵音色 (@0〜@14) だけ使える")
+      at=int(m[1]); i+=len(m[0]); continue
+    if d[i] not in "0123456789abcdefABCDEF": fail(f"@e{n}: エンベロープのデータ '{d[i]}' を解釈できない")
+    r.append((at,int(d[i],16))); at=None; i+=1
+  if not r: fail(f"@e{n}: エンベロープのデータがない")
+  ENVS[n]=r
 def parse_at(lines):
   r = {};m=[]
   for l in lines:
+    if ptn("^e([0-9]+)=\\{([^\\}]*)\\}$",l,m): parse_env(int(m[1]),m[2]); continue
     # @v17={...} と @17={...} は同じ (MGSDRV と同じ)
     if ptn("^v?([0-9]+)=\\{([^\\}]+)\\}$",l,m):
       r["@"+m[1]]=conv_voice(list(map(int,m[2].split(","))))
@@ -223,6 +239,7 @@ def parse_channel(ch,src,drum):
         # 回数は [n があればそれ (]m より優先)、なければ ]m、どちらもなければ 2 回 (MGSDRV と同じ)
         n=readInt(None); n0=counts.pop() if counts else None
         o(c, n0 if n0 is not None else n if n is not None else 2)
+      case "@" if src[pos]=="e": pos+=1; o("@e",readInt()) # ソフトウェアエンベロープ。@e0 で止める
       case "@" | "o" | "v" | "q" | "t": o(c,readInt())
       case "h": # ソフトウェア LFO。h 遅れ,振れ幅の段数,速さ,1 段の値。hf で止め、ho で動かす
         if src[pos]=="f": pos+=1; o("hf")
@@ -470,6 +487,8 @@ def mml_compile(name,chs,loops=2):
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
+    G.env=None; G.env_q=[] # ソフトウェアエンベロープと、まだ出していないフレームの 0x30 の値
+    G.legato=False # 直前が & (キーオンしない)
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     G.drum_rv=15 # リズムの ( ) の基準になる音量。v と vb などで最後に指定した値 (MGSDRV と同じ)
@@ -512,6 +531,11 @@ def mml_compile(name,chs,loops=2):
       G.all2+=G.t*a
       n = int(f); G.all += n
       if n==0: return
+      # ソフトウェアエンベロープ: 待ちを 1 フレームずつに分けて、フレームごとの音量を出す (次のキーオンまで続く)
+      while G.env_q and n>0:
+        p2(1); n-=1; fk=k=PWAIT
+        v=G.env_q.pop(0)
+        if v!=G.old_volume: p(PVOLUME,v); G.old_volume=v
       while n>=256: p2(0);n-=256
       if n!=0: p2(n)
     def pitch(b):
@@ -524,7 +548,8 @@ def mml_compile(name,chs,loops=2):
       nonlocal vi
       match v:
         case ["tone","r",a]:
-                      outvolume()
+                      # エンベロープを使っている間は、音量はエンベロープの値のまま (最後の値で止まる)
+                      if not G.env and not G.env_q: outvolume()
                       # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
                       # 0x26〜0x28 がリズムの音程なので書かない
                       if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,a/192)
@@ -541,7 +566,18 @@ def mml_compile(name,chs,loops=2):
                       notes={"c":0,"c+":1,"d":2,"d+":3,"e-":3,"e":4,"f":5,"f+":6,"g":7,"g+":8,"a":9,"a+":10,"b-":10,"b":11,"r":12}
                       b=notes[b];w = w/192
                       #print(f"w {w} q {G.q}")
-                      outvolume()
+                      legato=G.legato; G.legato=False # スラーでつなぐ音はエンベロープをやり直さない
+                      if G.env and not legato:
+                        # キーオンでエンベロープをやり直す。最初のフレームの値はキーオンと同じフレームに出す
+                        at=G.at; G.env_q=[]
+                        for eat,x in G.env:
+                          if eat is not None: at=eat+1
+                          G.env_q.append((at<<4)|min(15,G.volume+15-x))
+                        v=G.env_q.pop(0)
+                        if v!=G.old_volume: p(PVOLUME,v); G.old_volume=v
+                      else:
+                        if not legato: G.env_q=[]
+                        if not G.env and not G.env_q: outvolume()
                       porta=G.porta; G.porta=None; pi=None
                       if porta:
                         # ポルタメント: 始めの音程から N フレームかけてこの音へ。1 フレームに |差|/N ずつ (余りは dda)
@@ -588,8 +624,9 @@ def mml_compile(name,chs,loops=2):
                       while j < len(ch) and not (ch[j][0]=="]" and d==0):
                         if ch[j][0]=="[": d+=1
                         elif ch[j][0]=="]": d-=1
-                        elif ch[j][0] in ("@","v","v-","v+"): G.old_volume=-1
+                        elif ch[j][0] in ("@","v","v-","v+","@e"): G.old_volume=-1
                         j+=1
+                      if G.env: G.old_volume=-1 # エンベロープで音量が変わるので、2 周目の入口の音量はわからない
                       diff = max(0,G.all2-G.all) #+0.00000001
                       G.all+=diff
                       G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff,None])
@@ -649,7 +686,11 @@ def mml_compile(name,chs,loops=2):
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
         case ["drum_v",a,"-",n]: G.drum_v[a]=max(0,G.drum_v[a]-int(n))
         case ["drum_v",a,"",n]: G.drum_v[a]=int(n); G.drum_rv=int(n)
-        case ["&"]: p(PSLAON)
+        case ["&"]: p(PSLAON); G.legato=True
+        case ["@e",n]:
+                      if n==0: G.env=None
+                      elif n not in ENVS: fail(f"チャンネル {name}: エンベロープ @e{n} が定義されていない (@e{n} = {{,,...}})")
+                      else: G.env=ENVS[n]
         case ["so"]: p(PSUSON)
         case ["sf"]: p(PSUSOFF)
         case ["h",a,b,c,d]:
