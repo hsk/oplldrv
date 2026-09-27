@@ -31,7 +31,7 @@ def ptn(p,s,m):
 
 def preprocess(src):
     pos = 0; m=[]
-    macro={}
+    macro={}; macrows={}
     r = {"@":[],"#":[],"9":[],"A":[],"B":[],"C":[],"D":[],"E":[],"F":[],"G":[],"H":[]}; ch = 0
     def pt(pt,m):
       nonlocal pos,src
@@ -41,7 +41,13 @@ def preprocess(src):
     while pos < len(src):
       if pt("^[ \t\r\n]+",m): pass
       elif pt("^;[^\r\n]*",m): pass
-      elif pt("^#([^;\r\n]+)",m): o("#",m[1])
+      elif pt("^#([^;\r\n]+)",m):
+        o("#",m[1]); m1=[]
+        # #macro_offset はそれより後ろの行にだけ効く
+        if ptn("^macro_offset\s*\\{([^}]+)\\}",m[1],m1):
+          for wn in re.split(",",m1[1]):
+            kv=wn.replace(" ","").split("=")
+            macrows[kv[0]]=int(kv[1])
       elif pt("^(\\*[0-9]+)\s*=\s*\{([^}]*)\}",m): print(f"macro {m[1]}");macro[m[1]]=m[2].replace(" ","")
       elif pt("^@((;[^\r\n]+[\r\n]*|[^;\r\n}]+|[\r\n]+)+\})",m):
         n=m[1];r2=[];m1=[]
@@ -50,36 +56,15 @@ def preprocess(src):
             if ptn("^[^;\r\n\s]+",n,m1): r2.append(m1[0]);n=n[len(m1[0]):]; continue
             print(f"error {m}")
         o("@","".join(r2))
-      elif pt("^([^\s]+)\s+([^;\r\n]+)",m):list(map(lambda x:o(x,m[2].replace(" ","")),m[1]))
+      elif pt("^([^\s]+)\s+([^;\r\n]+)",m):
+        # *h1 などはこの行の時点の macro_offset で *5 のような番号に直す
+        v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(lambda w:f"*{macrows[w.group(1)]+(int(w.group(2)) if w.group(2) else 0)}",m[2].replace(" ",""))
+        for x in m[1]: o(x,v)
       else: pos+=1
-    print(f"# {r['#']}")
-    
-    macrows={}
-    for k,vs in r.copy().items():
-      if k=="#":
-        m=[[]]
-        for v in vs:
-          print(f"g {v}")
-          if ptn("^macro_offset\s*\\{([^}]+)\\}",v,m):
-              for wn in re.split(",",m[1]):
-                kv=wn.split("=")
-                macrows[kv[0]]=int(kv[1])
-            
+    for k,vs in r.items():
       if k=="@" or k == "#": continue
-      print(f"k {k}:vs {vs}")
       for i,v in enumerate(vs):
-        def macf(m):
-          nonlocal macro
-          return macro[m.group(0)]
-        def macw(m):
-          nonlocal macro
-          n = int(m.group(2)) if len(m.group(2))>0 else 0
-          print(f"{m.group(1)} {n}")
-          print(f"{macrows[m.group(1)]}")
-          return macro[f"*{macrows[m.group(1)]+n}"]
-        v=re.compile("\\*([0-9]+)").sub(macf,v)
-        v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(macw,v)
-        r[k][i]=v
+        r[k][i]=re.compile("\\*([0-9]+)").sub(lambda w:macro[w.group(0)],v)
     return r
 def conv_voice(dt):
   d=[0,0,0,0,0,0,0,0]
