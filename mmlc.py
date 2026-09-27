@@ -124,7 +124,8 @@ def conv_voice(dt):
 def parse_at(lines):
   r = {};m=[]
   for l in lines:
-    if ptn("^v([0-9]+)=\\{([^\\}]+)\\}$",l,m):
+    # @v17={...} と @17={...} は同じ (MGSDRV と同じ)
+    if ptn("^v?([0-9]+)=\\{([^\\}]+)\\}$",l,m):
       r["@"+m[1]]=conv_voice(list(map(int,m[2].split(","))))
   return r
 def parse_sharp(lines):

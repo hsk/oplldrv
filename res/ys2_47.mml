@@ -1,0 +1,21 @@
+; 音色定義 @n = {...} (v を付けない書き方) のテスト
+#opll_mode 0
+#tempo 120
+
+@17 = { ;@v29 distortion guitar
+;       TL FB
+        0, 5,
+; AR DR SL RR KL MT AM VB EG KR DT
+  14, 1, 4, 0, 0, 1, 0, 0, 1, 0, 0,
+  15, 8, 1, 7, 0, 1, 0, 0, 1, 0, 1 }
+
+@v18 = { ;@v31 Harpsicode
+;       TL FB
+       42, 6,
+; AR DR SL RR KL MT AM VB EG KR DT
+  13, 2,14, 6, 1, 7, 0, 0, 1, 0, 0,
+  15, 7,15, 6, 1, 2, 0, 0, 1, 0, 0 }
+
+; @n と @vn の両方の書き方の音色を切り替える
+9 v15 o4 l8
+9 @17 cdef @18 gab>c< @17 c @2 d @18 e
