@@ -27,6 +27,25 @@ PNEXTS="PNEXTS"
 PBREAKS="PBREAKS"
 # ドライバの音程表と同じ F-Number (o4a = 290)
 TONES=[172,182,194,205,217,230,244,258,273,290,307,325]
+# エラーは「ファイル名:行: error: 内容」を標準エラーに出して止める (main で受ける)
+class MmlError(Exception): pass
+FILENAME="-"
+LINEMAP={} # チャンネルごとに、つないだ文字列の位置 → (元の行番号, その行の文字列)
+def fail(msg,line=None,text=None,col=None):
+  where=f"{FILENAME}:{line}" if line else FILENAME
+  s=f"{where}: error: {msg}"
+  if text is not None:
+    s+=f"\n  {text}"
+    if col is not None: s+="\n  "+" "*col+"^"
+  raise MmlError(s)
+def fail_at(ch,pos,msg):
+  """チャンネル ch をつないだ文字列の pos の位置でエラーにする。元の行番号とその行を出す"""
+  for start,line,text,orig in reversed(LINEMAP.get(ch,[])):
+    if start<=pos:
+      # マクロを展開した行は、元の行と展開したあとの文字列を両方出す
+      if text!=orig.split(None,1)[-1].replace(" ",""): fail(f"チャンネル {ch}: {msg}",line,f"{orig}\n  -> {text}",pos-start+3)
+      fail(f"チャンネル {ch}: {msg}",line,text,pos-start)
+  fail(f"チャンネル {ch}: {msg}")
 def ptn(p,s,m):
   v = re.match(p,s)
   if v==None: m[:]=[""]; return False
@@ -37,6 +56,8 @@ def preprocess(src):
     pos = 0; m=[]
     macro={}; macrows={}
     r = {"@":[],"#":[],"9":[],"A":[],"B":[],"C":[],"D":[],"E":[],"F":[],"G":[],"H":[]}; ch = 0
+    lines = {k:[] for k in r} # r と同じ並びで、その行の行番号
+    lineno = lambda: src.count("\n",0,pos)+1
     def pt(pt,m):
       nonlocal pos,src
       if ptn(pt,src[pos:],m): pos+=len(m[0]); return True
@@ -51,6 +72,8 @@ def preprocess(src):
         if ptn("^macro_offset\s*\\{([^}]+)\\}",m[1],m1):
           for wn in re.split(",",m1[1]):
             kv=wn.replace(" ","").split("=")
+            if len(kv)!=2 or not re.match("^[a-zA-Z]$",kv[0]) or not re.match("^-?[0-9]+$",kv[1]):
+              fail(f"macro_offset の書き方が違う: {wn.strip()}",lineno(),"#"+m[1].strip())
             macrows[kv[0]]=int(kv[1])
       elif pt("^(\\*[0-9]+)\s*=\s*\{([^}]*)\}",m): print(f"macro {m[1]}");macro[m[1]]=m[2].replace(" ","")
       elif pt("^@((;[^\r\n]+[\r\n]*|[^;\r\n}]+|[\r\n]+)+\})",m):
@@ -60,15 +83,27 @@ def preprocess(src):
             if ptn("^[^;\r\n\s]+",n,m1): r2.append(m1[0]);n=n[len(m1[0]):]; continue
             print(f"error {m}")
         o("@","".join(r2))
-      elif pt("^([^\s]+)\s+([^;\r\n]+)",m):
+      elif pt("^([^\s]+)[ \t]+([^;\r\n]+)",m):
+        ln=src.count("\n",0,pos-len(m[0]))+1; text=m[0].rstrip()
         # *h1 などはこの行の時点の macro_offset で *5 のような番号に直す
-        v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(lambda w:f"*{macrows[w.group(1)]+(int(w.group(2)) if w.group(2) else 0)}",m[2].replace(" ",""))
-        for x in m[1]: o(x,v)
+        def macw(w):
+          if w.group(1) not in macrows: fail(f"*{w.group(1)} の macro_offset がない",ln,text)
+          return f"*{macrows[w.group(1)]+(int(w.group(2)) if w.group(2) else 0)}"
+        v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(macw,m[2].replace(" ",""))
+        for x in m[1]:
+          if x not in r or x in "@#": fail(f"チャンネル {x} は使えない (9・A〜H)",ln,text)
+          o(x,v); lines[x].append((ln,text))
       else: pos+=1
     for k,vs in r.items():
       if k=="@" or k == "#": continue
+      start=0; LINEMAP[k]=[]
       for i,v in enumerate(vs):
-        r[k][i]=re.compile("\\*([0-9]+)").sub(lambda w:macro[w.group(0)],v)
+        def macf(w):
+          if w.group(0) not in macro: fail(f"マクロ {w.group(0)} が定義されていない",*lines[k][i])
+          return macro[w.group(0)]
+        r[k][i]=re.compile("\\*([0-9]+)").sub(macf,v)
+        # エラーの位置は、マクロを展開したあとの文字列で数える
+        LINEMAP[k].append((start,lines[k][i][0],r[k][i],lines[k][i][1])); start+=len(r[k][i])
     return r
 def conv_voice(dt):
   d=[0,0,0,0,0,0,0,0]
@@ -103,7 +138,7 @@ def parse_channel(ch,src,drum):
   def readInt(default=Exception):
     nonlocal src,pos; r=[]
     if ptn("^-?[0-9]+",src[pos:],r): pos += len(r[0]); return int(r[0])
-    if default==Exception: raise Exception(f"error channel {ch} pos {pos}\n{src[pos:pos+10]}")
+    if default==Exception: fail_at(ch,pos,f"数がない ('{src[pos-1]}' のあと)")
     return default
   def readLen(c,default=Exception):
     def vlen():
@@ -124,23 +159,19 @@ def parse_channel(ch,src,drum):
     l = vlen2()
     if l==None:
       if default!=Exception: return default
-      raise Exception("error"+src[pos:pos+10])
+      fail_at(ch,pos,"長さがない")
     while src[pos]=="^":
       pos+=1
       if src[pos] == c: pos+=1
       l2 = vlen2()
-      if l2==None: raise Exception("error"+src[pos:pos+10])
+      if l2==None: fail_at(ch,pos,"^ のあとに長さがない")
       l += l2
     return l
   def o(*data): nonlocal r; r.append(list(data))
   def err():
     nonlocal pos,ch,src
     pos -= 1
-    print(f"error channel {ch} pos{pos} '{src[pos]}'")
-    print(f"{src[max(pos-5,0):min(pos+20,len(src))]}")
-    for i in range(min(5,max(pos-5,0))+1): print("^",end="")
-    print("")
-    exit(-1)
+    fail_at(ch,pos,f"'{src[pos]}' を解釈できない")
   m = [""]
   while True:
     c = src[pos]; pos += 1
@@ -209,6 +240,7 @@ def loop_expand(chs):
     before=0
     after=0
   def expand(n,ch):
+    name=n # n はループ回数などで上書きされるので、チャンネル名は別に持つ
     G.before+=len(ch)
     G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=0
     r = []
@@ -230,7 +262,10 @@ def loop_expand(chs):
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
           case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv,G.dt])
-          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv,G.dt)
+          case ["|"]:
+            if not stack: fail(f"チャンネル {name}: | がループの外にある")
+            stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv,G.dt)
+          case ["]",_] if not stack: fail(f"チャンネル {name}: ] に対応する [ がない")
           case ["]",n]:
             [start,br,vol,octave,brstate,at,dv,dt]= stack.pop()
             if br == None: br=len(r)
@@ -480,7 +515,9 @@ def mml_compile(name,chs,loops=2):
                       if G.o>0:G.o-=1
         case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
         case ["@",v]  if v < 15: G.at = (v+1)
-        case ["@",v]: G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
+        case ["@",v]:
+                      if f"@{v}" not in G.sounds: fail(f"チャンネル {name}: 音色 @{v} が定義されていない (@v{v} = {{...}})")
+                      G.at=0; p(PSLOAD,G.sounds[f"@{v}"]*8)
         case ["["]:   
                       # 本体で音色や音量を変えるなら、2 周目の入口の音色・音量は 1 周目の終わりのものになるので、
                       # 直前に出した音色・音量を忘れて、本体の最初の音で必ず PVOLUME を出す
@@ -495,6 +532,7 @@ def mml_compile(name,chs,loops=2):
                       G.stack.append([len(G.r),G.all,G.all2,None,None,None,diff,None])
                       G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
         case ["]",n]: # n回ループする
+                      if not G.stack: fail(f"チャンネル {name}: ] に対応する [ がない")
                       n1=n
                       if n<2:n=1
                       [l,al,al2,br,bral,bral2,diff,brstate]=G.stack.pop();G.r[l+1]=f"{n1>>1}";G.r[l+2]=f"{n1}"
@@ -535,7 +573,8 @@ def mml_compile(name,chs,loops=2):
         case ["v+",v]:G.volume=min(15,max(0,G.volume-v))
         case ["|"]:
                       #print("|",file=sys.stderr)
-                      if G.stack[-1][3] != None: print("error arleady use |")
+                      if not G.stack: fail(f"チャンネル {name}: | がループの外にある")
+                      if G.stack[-1][3] != None: fail(f"チャンネル {name}: 1 つのループに | が 2 つある")
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
@@ -549,10 +588,12 @@ def mml_compile(name,chs,loops=2):
         case ["so"]: p(PSUSON)
         case ["sf"]: p(PSUSOFF)
         case ["\\",n]: G.detune=n
-        case v:       print(f"unknown {v}")
+        case v:       fail(f"チャンネル {name}: 対応していない命令 {v}")
     vi = 0
     while vi<len(ch):
       v = ch[vi]; vi += 1; cmd_compile(n,v)
+    # 閉じていない [ は MGSDRV もそのまま通す (1 回だけ鳴らす) ので、警告だけ出す
+    if G.stack: print(f"{FILENAME}: warning: チャンネル {n}: [ が {len(G.stack)} 個閉じていない",file=sys.stderr)
     p(PEND)
     G.r.insert(0,f"{G.stackMax}")
     split=",\n  "
@@ -571,14 +612,19 @@ def mml_compile(name,chs,loops=2):
   print(f"u8* const {name}[]={{{''.join(d)}}};")
   print(f"#define {name}_frames {G.frames}")
   print(f"frames {G.frames} ({G.frames/60:.2f}sec.)",file=sys.stderr)
-  if G.frames > 65000: print(f"error: frames {G.frames} > 65000",file=sys.stderr); sys.exit(1)
+  if G.frames > 65000: fail(f"frames {G.frames} > 65000")
   G.all_len += 2*4
   print(f"data size {G.all_len}bytes.",file=sys.stderr)
 
 def main():
+  global FILENAME
   print("/*")
+  FILENAME = sys.argv[1]
   str = read_all(sys.argv[1])
   loops = int(sys.argv[3]) if len(sys.argv) > 3 else 2
-  mml_compile(sys.argv[2],loop_expand(parse(str)),loops)
+  try:
+    mml_compile(sys.argv[2],loop_expand(parse(str)),loops)
+  except MmlError as e:
+    print(e,file=sys.stderr); sys.exit(1)
 
 main()
