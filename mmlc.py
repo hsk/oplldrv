@@ -525,7 +525,9 @@ def mml_compile(name,chs,loops=2):
       if w2 and not (w1 and v1 == v2): p(PDRUMV,0x38,v2)
       if w1: G.old_drum_v[1]=v1
       if w2: G.old_drum_v[2]=v2
-    G.t = 60*60*4/(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
+    # 全音符のフレーム数。MGSDRV は 60*60*4/テンポ を切り捨てた整数にしてから音符に分けるので同じにする
+    # (テンポ 112 は 128.57 ではなく 128 フレーム。書いたテンポより少し速くなる)
+    G.t = 60*60*4//(chs["#"]["tempo"] if "tempo" in chs["#"] else 120)
     G.all = 0;G.all2 = 0; G.q=1
     
     def outwait(prm, fk,k,a):
@@ -626,7 +628,7 @@ def mml_compile(name,chs,loops=2):
                       if G.o<7:G.o+=1
         case ["<"]:
                       if G.o>0:G.o-=1
-        case ["t",t]: G.t=60*60*4/t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
+        case ["t",t]: G.t=60*60*4//t; G.tempos[int(G.all2*192)]=G.t; print(f"t {G.all2*192}",file=sys.stderr)
         case ["@",v]  if v < 15: G.at = (v+1)
         case ["@",v]:
                       if f"@{v}" not in G.sounds: fail(f"チャンネル {name}: 音色 @{v} が定義されていない (@v{v} = {{...}})")
