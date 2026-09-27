@@ -102,12 +102,12 @@ void p_exec(PSGDrvCh* ch) {
       if (!ch->sla) {
         ym2413(ch->no20,0);
       }
-      ch->sla=ch->sus;
+      ch->sla=0;
       a=a+a;
       u8* iy = &((u8*)tones)[a];
       a = iy[0];
       ym2413(ch->no10,a);
-      a = iy[1];
+      a = iy[1]|ch->sus;
       ch->tone=a; 
       ym2413(ch->no20,(1<<4)|a);
       a=*ch->pc++;ch->wait=a;
@@ -195,7 +195,8 @@ void p_exec(PSGDrvCh* ch) {
                   break;
                 }
     case PSLAON: ch->sla=1; break;
-    case PSUSON: ch->sus=1; break;
+    case PSUSON: ch->sus=0x20; break;
+    case PSUSOFF: ch->sus=0; break;
     case PDRUMV2:{ // 0x37 と 0x38 に同じ音量を書く
                   u8 v=*ch->pc++;
                   ym2413(0x37,v);
@@ -234,7 +235,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PDRUMV2 $ jp c,13$ $ jp z,18$
       cp #PDRUMV $ jp c,19$ $ jp z,15$
       cp #PBREAK $ jp c,9$ $ jp z,10$
-      cp #PSUSON $ jp c,11$ $ jp 14$
+      cp #PSUSON $ jp c,11$ $ jp z,14$ $ jp 20$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -244,7 +245,7 @@ void p_exec(PSGDrvCh* ch) __naked {
         ld a,c $ out (_IOPortOPLL1), a
         xor a $ out (_IOPortOPLL2), a
       31$: ; }
-      ld a,IX(P_SUS) $ ld IX(P_SLA),a ; ch->sla=ch->sus
+      ld IX(P_SLA),#0 ; ch->sla=0
       ld a,d $ add a,a ; a=a+a;
       ; u8* iy = &((u8*)tones)[a];
       add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
@@ -257,7 +258,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; ch->tone=a;
       ; ym2413(0x20+ch->no,(1<<4)|(a));
       ld a,c $ out (_IOPortOPLL1), a
-      ld a,(de) $ ld IX(P_TONE), a $ or a, #16 $ out (_IOPortOPLL2), a
+      ld a,(de) $ or IX(P_SUS) $ ld IX(P_TONE), a $ or a, #16 $ out (_IOPortOPLL2), a
       ld a,(hl) $ inc hl $ ld IX(P_WAIT),a 
       jp 2$; break;
     4$:; case PKEYOFF:
@@ -401,7 +402,10 @@ void p_exec(PSGDrvCh* ch) __naked {
       ld IX(P_SLA),#1; ch->sla=1;
       jp 1$ ; break;
     14$: ; case PSUSON:
-      ld IX(P_SUS),#1; ch->sus=1;
+      ld IX(P_SUS),#0x20; ch->sus=0x20;
+      jp 1$ ; break;
+    20$: ; case PSUSOFF:
+      ld IX(P_SUS),#0; ch->sus=0;
       jp 1$ ; break;
     18$: ; case PDRUMV2: 0x37 と 0x38 に同じ音量を書く
       ld a,#0x37 $ out (_IOPortOPLL1), a

@@ -1,0 +1,15 @@
+; so・sf (サスティン) のテスト
+#opll_mode 0
+#tempo 120
+
+; so のあと q8 でつながる音、q4 で切れる音、& のスラー、sf で戻す
+9 @1 v15 o4 l8
+9 cdef so cdef q4 cdef q8 c&d&e f sf cdef so r4 cd sf r4 cd
+
+; 音色 @ と so・sf の順番、ループの中で so・sf を切り替える
+A @3 v13 o5 l8
+A [so c4d4 sf e4f4]2 so [g4 | sf a4]3 b4 sf >c2
+
+; so だけのチャンネルと、何もしないチャンネル
+B @5 v12 o3 l4 so cegb>c2
+C @7 v12 o3 l4 cegb>c2

@@ -15,7 +15,7 @@ typedef struct PSGDrvCh {
   u8 no30;
   u8* sp;
   u8 sla;
-  u8 sus;
+  u8 sus;  // サスティン (so で 0x20、sf で 0)。0x20+ch に書く値に足す
   u8 drum;
 } PSGDrvCh;
 #define P_WAIT 0
@@ -48,6 +48,7 @@ typedef struct PSGDrvCh {
 #define PBREAK  0x8C
 #define PSLOAD  0x8D
 #define PSUSON  0x8E
+#define PSUSOFF 0x8F
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);

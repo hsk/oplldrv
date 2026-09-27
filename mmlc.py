@@ -18,6 +18,7 @@ PBREAK="PBREAK"
 PSLOAD="PSLOAD"
 PSLAON="PSLAON"
 PSUSON="PSUSON"
+PSUSOFF="PSUSOFF"
 PDRUMV="PDRUMV"
 PDRUMV1="PDRUMV1"
 PDRUMV2="PDRUMV2"
@@ -528,6 +529,7 @@ def mml_compile(name,chs,loops=2):
         case ["drum_v",a,"",n]: G.drum_v[a]=int(n); G.drum_rv=int(n)
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
+        case ["sf"]: p(PSUSOFF)
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):
