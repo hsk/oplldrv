@@ -500,6 +500,7 @@ def mml_compile(name,chs,loops=2):
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
     G.env=None; G.env_q=[] # ソフトウェアエンベロープと、まだ出していないフレームの 0x30 の値
+    G.lpitch=None # 直前の LFO をかけた音 (PTONEL) の音程
     G.legato=False # 直前が & (キーオンしない)
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
@@ -594,7 +595,7 @@ def mml_compile(name,chs,loops=2):
                       else:
                         if not legato: G.env_q=[]
                         if not G.env and not G.env_q: outvolume()
-                      porta=G.porta; G.porta=None; pi=None
+                      porta=G.porta; G.porta=None; pi=None; tie=False
                       if porta:
                         # ポルタメント: 始めの音程から N フレームかけてこの音へ。1 フレームに |差|/N ずつ (余りは dda)
                         blk,f=pitch(b)
@@ -602,15 +603,21 @@ def mml_compile(name,chs,loops=2):
                         pi=len(G.r)+3
                         p(PPORTA,porta[1]&255,(porta[0]<<1)|(porta[1]>>8),0,0,0,1 if dl<0 else 0)
                         all0=G.all
+                      elif G.lfo_on and legato and G.lpitch==pitch(b):
+                        # LFO をかけた音を同じ音程でスラーでつなぐときは、MGSDRV は何もしない (LFO も続ける)。
+                        # 直前の PSLAON を消して、音を出し直さずに待つだけにする
+                        del G.r[len(G.r)-1-G.r[::-1].index(PSLAON)]
+                        tie=True
                       elif G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12]):
                         # デチューンで音程表と違う音は、音程をデータで持つ (PTONEF)。172〜344 から出たらブロックをまたぐ
                         # LFO をかける音も音程をデータで持つ (PTONEL)
                         blk,f=pitch(b)
                         p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
                       else: p(f"/*PTONE,*/{b+G.o*12}")
+                      G.lpitch=pitch(b) if G.lfo_on and not porta else None
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
-                      outwait(f"tone {b}", False,PWAIT,w*q)
+                      outwait(f"tone {b}", PWAIT if tie else False,PWAIT,w*q)
                       ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
                       if q!=1: outwait(f"off {b}",ko,ko,w*(1-q))
                       if porta:
