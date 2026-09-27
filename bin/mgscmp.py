@@ -75,6 +75,86 @@ class Note:
         return 'c c+d d+e f f+g g+a a+b '[n % 12 * 2:n % 12 * 2 + 2].strip() + str(n // 12)
 
 
+def read_psg(path):
+    """PSG (AY-3-8910) への書き込み (フレーム, レジスタ, 値) のリスト。
+    oplldrv のログは psg の行 (wait でフレームを進める)、MGSDRV のログは「フレーム psg レジスタ 値」の行"""
+    r = []
+    frame = 0
+    for line in open(path):
+        w = line.split()
+        if w and w[0] == 'wait':
+            frame += 1
+        elif len(w) == 3 and w[0] == 'psg':
+            r.append((frame, int(w[1]), int(w[2])))
+        elif len(w) == 4 and w[1] == 'psg':
+            r.append((int(w[0]), int(w[2]), int(w[3])))
+    return r
+
+
+def psg_states(writes, end):
+    """チャンネルごとに、フレームの終わりの状態のリスト。鳴っていなければ None、
+    鳴っていれば (トーンの周期 or None, ノイズの周期 or None, 音量 (エンベロープなら 'E'))"""
+    reg = [0] * 16
+    reg[7] = 0xff
+    st = [[], [], []]
+    i = 0
+    for f in range(end):
+        while i < len(writes) and writes[i][0] <= f:
+            reg[writes[i][1] & 15] = writes[i][2]
+            i += 1
+        for ch in range(3):
+            tone = not reg[7] >> ch & 1
+            noise = not reg[7] >> (ch + 3) & 1
+            v = reg[8 + ch]
+            vol = 'E' if v & 16 else v & 15
+            if vol == 0 or not (tone or noise):
+                st[ch].append(None)
+            else:
+                st[ch].append((reg[ch * 2] | (reg[ch * 2 + 1] & 15) << 8 if tone else None,
+                               reg[6] & 31 if noise else None, vol))
+    return st
+
+
+def psg_name(s):
+    """PSG の状態を音名などで表す (クロック 1789772.5Hz、o4a = 440Hz)"""
+    if s is None:
+        return '---'
+    tone, noise, vol = s
+    t = ''
+    if tone:
+        n = round(12 * math.log2(1789772.5 / 16 / tone / 440)) + 57
+        t = 'c c+d d+e f f+g g+a a+b '[n % 12 * 2:n % 12 * 2 + 2].strip() + str(n // 12) + f'({tone})'
+    if noise is not None:
+        t += f' n{noise}'
+    return f'{t} v{vol}'
+
+
+def compare_psg(A, B, verbose):
+    """PSG のチャンネルごとに、フレームの状態を比べる。一致したフレーム数を返す"""
+    total = Counter()
+    for ch in range(3):
+        a, b = A[ch], B[ch]
+        if not any(a) and not any(b):
+            continue
+        same = sum(x == y for x, y in zip(a, b))
+        pitch = sum(x is not None and y is not None and x[:2] != y[:2] for x, y in zip(a, b))
+        vol = sum(x is not None and y is not None and x[:2] == y[:2] and x[2] != y[2] for x, y in zip(a, b))
+        onoff = sum((x is None) != (y is None) for x, y in zip(a, b))
+        total.update(psg_frames=len(b), psg_match=same)
+        print(f'  PSG ch{ch}: フレーム一致 {same}/{len(b)} | 鳴る・鳴らない違い {onoff} 音程違い {pitch} 音量違い {vol}')
+        # 食い違ったところを、同じ状態が続いているフレームをまとめて出す
+        runs = []
+        for f, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                if runs and runs[-1][1] == f - 1 and runs[-1][2:] == [x, y]:
+                    runs[-1][1] = f
+                else:
+                    runs.append([f, f, x, y])
+        for f0, f1, x, y in runs[:None if verbose else 3]:
+            print(f'      {f0}-{f1}: oplldrv {psg_name(x)} / MGSDRV {psg_name(y)}')
+    return total
+
+
 def cents(a, b):
     fa = a.fnum << a.block
     fb = b.fnum << b.block
@@ -241,6 +321,9 @@ def compare(name, a_path, b_path, verbose=False):
                       f'[{" ".join(f"{x:02x}" for x in b[3])}]')
         total.update(drum_a=len(ad), drum_b=len(bd), drum_match=len(pairs), drum_vol=len(vol_ng),
                      drum_pitch=len(pitch_ng))
+    pa, pb = read_psg(a_path), read_psg(b_path)
+    if pa or pb:
+        total.update(compare_psg(psg_states(pa, end), psg_states(pb, end), verbose))
     if fnums:
         print('  F-Number の違い (音名 oplldrv MGSDRV 回数): ' + ' '.join(
             f'{n}:{a}/{b}x{c}' for (n, a, b), c in sorted(fnums.items(), key=lambda x: -x[1])[:12]))
@@ -250,7 +333,8 @@ def compare(name, a_path, b_path, verbose=False):
           f'鳴りっぱなし {total["hang"]} 長すぎ {total["long"]}'
           + (f' リズム一致 {total["drum_match"]}/{total["drum_b"]} 音量違い {total["drum_vol"]}'
              f' 音程レジスタ違い {total["drum_pitch"]}'
-             if total['drum_b'] or total['drum_a'] else ''))
+             if total['drum_b'] or total['drum_a'] else '')
+          + (f' PSG フレーム一致 {total["psg_match"]}/{total["psg_frames"]}' if total['psg_frames'] else ''))
     return total
 
 
