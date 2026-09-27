@@ -204,7 +204,8 @@ def parse_channel(ch,src,drum):
       case "l": l=readLen(c,l); o("l",l)
       case "v" if ptn("^([+-])",src[pos:],m):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
-      case "@" | "o" | "]" | "v" | "q" | "t": o(c,readInt())
+      case "]": o(c,readInt(2)) # 回数がなければ 2 回 (MGSDRV と同じ)
+      case "@" | "o" | "v" | "q" | "t": o(c,readInt())
       case "s":
         if src[pos]=="o": pos+=1; o("so")
         elif src[pos]=="f": pos+=1; o("sf")
