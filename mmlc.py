@@ -560,7 +560,9 @@ def mml_compile(name,chs,loops=2):
                       if len(G.stack) == 0:
                         G.all = int(G.all+0.00000001)
                         diff1 = int(diff+0.00000001)
-                      p(diff1,n1)
+                      # dda: 1 周ごとに diff1 を足し、n1 以上になったら 1 フレーム待つ (n1 周で diff1 フレーム)。
+                      # 無限ループ (n1=0) は 1 周を 1 回と数えるので 1。0 だと毎周 1 フレーム余計に待ってしまう
+                      p(diff1,n1 if n1 else 1)
                       print(f"  [ {al2-al} ]{n1} {diff1}",file=sys.stderr)
                       #outwait(f"]{n+1+int(bool(br))}",PWAIT,PWAIT,0)
                       if len(G.stack) == 0 and n1 == 0: G.intro = al
