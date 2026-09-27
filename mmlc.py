@@ -247,6 +247,10 @@ def parse_channel(ch,src,drum):
         if not 0<=n<=255: fail_at(ch,pos-1,f"@\\ の値 {n} は 0〜255")
         o("@\\",n)
       case "@" | "o" | "v" | "q" | "t": o(c,readInt())
+      case "y": # レジスタに直接書く y レジスタ,値
+        rg=readInt()
+        if src[pos]!=",": fail_at(ch,pos,"y は y レジスタ,値 の 2 つの数で書く")
+        pos+=1; o("y",rg,readInt())
       case "h": # ソフトウェア LFO。h 遅れ,振れ幅の段数,速さ,1 段の値。hf で止め、ho で動かす
         if src[pos]=="f": pos+=1; o("hf")
         elif src[pos]=="o": pos+=1; o("ho")
@@ -712,6 +716,9 @@ def mml_compile(name,chs,loops=2):
                       if G.lfo and G.lfo[3]: a,b,c,d=G.lfo; p(PLFO,a&255,b&255,c&255,d&255); G.lfo_on=True
         case ["\\",n]: G.detune=n
         case ["@\\",n]: G.fine=n
+        case ["y",rg,v]:
+                      p(PDRUMV,rg&255,v&255) # PDRUMV は任意のレジスタに書く命令
+                      G.old_volume=-1 # 音量のレジスタを書き換えたかもしれないので、次の音で出し直す (MGSDRV もキーオンで書き直す)
         case v:       fail(f"チャンネル {name}: 対応していない命令 {v}")
     vi = 0
     while vi<len(ch):
