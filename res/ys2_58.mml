@@ -1,0 +1,538 @@
+;[gain=1.0 name=YS2TOMAK duration=300s fade=5s cpu=0 lpf=1]
+; The line above defines extra options, works only on msxplay.com
+; name    : Name of mml, use as the base download filename.
+; gain    : Volume gain. (default: 1.0)
+; duration: Maxiumum play duration. (default: 300s)
+; fade    : Time of fading out. (default: 5s)
+; cpu     : CPU speed ratio. 0:auto, 1:3.58MHz (default: 0)
+; lpf     : Low-pass filter. 0:off, 1:on (default: 0)
+; loop    : Number of global loops. (default: 2).
+;           Note that duration takes precedence over loop.
+#opll_mode 1
+#tempo 112
+#title {"YS II : TO MAKE THE END OF BATTLE / OPLL+PSG cover by uniskie"}
+
+;=============================================
+; PSG
+;=============================================
+  ;=============================================
+  ; OPLL VOICEs
+  ;=============================================
+    ;@v15 = { ;@v28 distortion guitar High
+    ;;       TL FB
+    ;         7, 3,
+    ;; AR DR SL RR KL MT AM VB EG KR DT
+    ;  14, 1, 4, 1, 0, 1, 0, 0, 1, 0, 0,
+    ;  15, 3, 1, 1, 0,15, 0, 0, 0, 0, 1 }
+
+    ;@v17 = { ;@v29 distortion guitar Normal
+    ;;       TL FB
+    ;         0, 2,
+    ;; AR DR SL RR KL MT AM VB EG KR DT
+    ;  14, 1, 4, 1, 0, 1, 0, 0, 1, 0, 0,
+    ;  15, 8, 1, 6, 0,15, 0, 0, 1, 0, 1 }
+
+    @v16 = { ;@v29 distortion guitar (high)
+    ;       TL FB
+            12, 7,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      14, 1, 4, 0, 0, 1, 0, 1, 1, 0, 0,
+      15, 8, 1, 1, 0, 1, 0, 1, 0, 0, 1 }
+
+    @v17 = { ;@v29 distortion guitar
+    ;       TL FB
+            0, 5,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      14, 1, 4, 0, 0, 1, 0, 0, 1, 0, 0,
+      15, 8, 1, 7, 0, 1, 0, 0, 1, 0, 1 }
+
+    @v18 = { ;@v31 Harpsicode
+    ;       TL FB
+            42, 6,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      13, 2,14, 6, 1, 7, 0, 0, 1, 0, 0,
+      15, 7,15, 6, 1, 2, 0, 0, 1, 0, 0 }
+
+    @v19 = { ;@v32 electric piano
+    ;       TL FB
+            18, 3,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      14, 9, 1, 5, 0, 2, 0, 0, 1, 1, 0,
+      14, 7, 3, 1, 0, 2, 0, 0, 0, 0, 0 }
+
+    @v20 = { ;@v34 shtar
+    ;       TL FB
+            7, 3,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      15, 0, 0, 5, 0, 3, 0, 1, 1, 0, 0,
+      15, 7, 3, 1, 0, 3, 0, 1, 0, 0, 0 }
+
+    @v21 = { ;@v35 brass
+    ;       TL FB
+            16, 5,
+    ; AR DR SL RR KL MT AM VB EG KR DT
+      15, 3, 1, 5, 0, 1, 0, 0, 1, 0, 0,
+      11,15, 0, 5, 1, 2, 1, 0, 1, 0, 0 }
+  ;=============================================
+  ; MGSDRV ROM音色番号 音色名
+  ;=============================================
+    ;     0  1          バイオリン
+    ;     1  2          ギター
+    ;     2  3          ピアノ
+    ;     3  4          フルート
+    ;     4  5          クラリネット
+    ;     5  6          オーボエ
+    ;     6  7          トランペット
+    ;     7  8          オルガン
+    ;     8  9          ホルン
+    ;     9 10          シンセ
+    ;    10 11          ハープシコード
+    ;    11 12          ビブラフォン
+    ;    12 13          シンセベース
+    ;    13 14          ウッドベース
+    ;    14 15          エレキベース
+  ;=============================================
+  ; MAIN
+  ;=============================================
+    *0 = { @17 q8sf v+1 } ;guiter main
+    *2 = { v-1 } ;end - guiter main
+    *1 = { @13 q8sf v-0 } ;guiter sub
+    *3 = { v+0 } ;end - guiter sub
+
+    ;*4 = { h21,2,1,2 }
+    ;*5 = { h6,1,0,2 }
+    *4 = { }
+    *5 = { }
+
+    ;=============================================
+    ; 9
+    ;=============================================
+      #macro_offset {v=0, h=4}
+      9 r16 ;wait
+      9    l16
+      9    r8.
+      9    *h0
+
+      9    [
+
+      9     v14 o4 
+
+      ;**** part a
+      9     *v0 ;distortion guitar
+      9     e-ega8<aaa> c+<a>d<a>e<a>d
+      9     <a>
+
+      9     < @20 ;shtar
+      9     *v2
+
+      9     l32a&b-a&b-a&b-a&b->a&b-a&b-a&b-a&b-< l16
+      9     ab->c+<b-ab->c+
+      9     d<
+      9     >
+
+      9     *v0 ;distortion guitar
+
+      9     >c+<ab-gafge b-gafgefd
+      9     c+defgab->c+ ec+<b->fc+<b-< ef
+      9     *h1 g4.ab- >c+4.ef *h0
+      9     gfefgab->c+ q6e8q8e8f8g8<
+
+      ;**** part b
+      ; distortion guitar
+      9      >
+      9      fecd16^2     <a>cdc
+      9      fecd16^2<agfe
+
+      9      f8.d8.f8
+      9      g8.e8.g8
+      9      a8.f8.d8
+      9      e8.g8.b-8
+      9      a2> defgagfe
+
+      9      g8.e8.c8
+
+      9      <g8.>c8.e8
+      9      fd<afda>df ec<gecg>ce<
+
+      9      dfa>c+dfa
+
+      9      @16 ;distortion guitar high
+      9      >c+d2<<
+      9      *v2
+
+      ;**** part c
+      ; elepi
+      9      @19 q6so ;electric piano
+
+      9     >
+      9     fecd16^4^ 4<a>cdc
+      9     fecd16^4^ 4<agfe
+
+      9     f8.d8.f8
+      9     g8.e8.g8
+      9     a8.f8.d8
+      9     e8.g8.b-8
+      9     a2> defgagfe
+
+      9     g8.e8.c8
+
+      9     <g8.>c8.e8
+      9     fd<afda>df ec<gecg>c
+      9     e<
+
+      ;**** part d
+      9     @21 q8sf ;brass
+
+      9     e-8.&<b-32&>e-32g8.&e-32&g32 b-8.&g32&b-32 >e-8&
+      9    |e-8<
+
+      9     >a4dfga16^ 8g8fg8>d&
+      9     d8<a8gf8e16^ 8f8.g8.<
+
+      ;**** part e
+      9     @19 q6so ;electric piano
+
+      9     >a4dfga16^  8g8fg8>d&
+      9      d8d8e8d8 d4c+4<<
+
+      ;**** part f
+      9     v-1 @2  q4sf ;piano
+
+      9     [>>dfadfadf adfae-gb-g
+      9       dfadfadf adfacceg<<]2
+
+      9     v+1
+
+      9    ]3
+      9     e-8
+      9     <
+
+      ;**** part g
+      9    *v0 ;distortion guitar
+      9    v+1
+      9    sf dr8dr8 dd8 d8<r4
+      9    r2. r2.
+
+    ;=============================================
+    ; A
+    ;=============================================
+      #macro_offset {v=0, h=4}
+      A r16 ;wait
+      A    l16
+      A    r8.
+
+      A    *h0
+
+      A    [
+
+      A     v14 o5 \-1 
+
+      ;**** part a
+      A     *v1
+      A     e-ega8<aaa> c+<a>d<a>e<a>d
+      A     <a>
+
+      A     v-1 @1  ;guiter
+      A     *v3
+
+      A     l32a&b-a&b-a&b-a&b->a&b-a&b-a&b-a&b-< l16
+      A     ab->c+<b-ab->c+
+      A     d<
+      A     v+1
+
+      A     *v1
+
+      A     >c+<ab-gafge b-gafgefd
+      A     c+defgab->c+ ec+<b->fc+<b-< ef
+      A     *h1 g4.ab- >c+4.ef *h0
+      A     gfefgab->c+ q6e8q8e8f8g8<
+
+      ;**** part b
+      ; distortion guitar
+      A      >
+      A      fecd16^2     <a>cdc
+      A      fecd16^2<agfe
+
+      A      f8.d8.f8
+      A      g8.e8.g8
+      A      a8.f8.d8
+      A      e8.g8.b-8
+      A      a2> defgagfe
+
+      A      g8.e8.c8
+
+      A      <g8.>c8.e8
+      A      fd<afda>df ec<gecg>ce<
+
+      A      dfa>c+dfa
+
+      A      >c+d2<<
+      A      *v3
+
+  ;=============================================
+  ; B BASS
+  ;=============================================
+    *6 = { <<<  @14 q3so v-1           } ;base 1
+    *8 = { >>>      q8so v+1           } ;hit
+
+    ;=============================================
+    ; B <- D
+    ;=============================================
+      #macro_offset {b=6}
+      B r16 ;wait
+      B  r8.
+
+      B  [
+      B   @14q3so v14 o2 
+
+      B   l16
+      B   aaaa>c+<a>d<a
+      B   >e<a>f<a>g<a>f<a
+      B   >e<a>f<a>e<a>d<a
+      B   >c+<ab-gab->c+<b-
+      B   [
+      B    aaa *b2a8.*b0 >a8 
+      B    a<aaraa>c+d< 
+      B   ]3
+      B   aaa *b2a8.*b0 >a8 
+      B   <aa>a<abb>c+c+< 
+
+      B   [
+      B    >dddddddddddddddd<
+      B    >cccccccccccccccc<
+      B   |
+      B    b-b->fb->d<b-fb-<
+      B    >ccg>cec<g>c<<
+      B    >ddfa>d<afd<
+      B    a>age<aaaa
+      B   ]4
+      B    b-b->fb->d<b-fb-<
+      B    >ccg>cec<g>c<<
+      B    >e-e-b-e-ge-ae-<
+      B    >b-e->e-<e->g<e->b-<e-<
+
+      B  |
+      B   [
+      B    >dd>d<dga>cd<
+      B    ff>f<fff>f<f
+      B    b-b->b-<b-b-b->b-<b-<
+      B   |
+      B    >aa>a<a>g<a>a<a<
+      B   ]2
+      B    >aa>a<a>aec+<a<
+
+      B   [
+      B    >dr8dr8>cd<rdfde-e-gb-<
+      B    >dr8dr8>cd<rdfdccec<
+      B   ]2
+      B  ]3
+
+      B  >dd>d<dga>c&d&
+      B  &d4r16v0r8.
+
+  ;=============================================
+  ; C <- 1 ソプラノ
+  ;=============================================
+    C r16 ;wait
+    C   r8.
+    ; C   h21,2,1,1
+
+    C   [
+
+    C    @4 v12 o5 q8
+
+    C    l4>e2 g2< 
+    C    l16>>b-gec+<a+gec+   efg+fefg+a< 
+
+    C    v-1 q6
+    ;C    h3,1,2,-2
+
+    C    l32 > b-2>e2 g4.f8e2<    a+2>e2 g2<  < 
+
+    C    v+1
+    ; C    h21,2,1,1
+
+    C    l8>ec+de<
+
+    C    [ q8
+    C     [
+    C      l16>dc<ga16^4 >a8g8f8e8<
+    C     ]2
+
+    C     >d8.<a8.>d8
+    C     e8. c8.e8
+    C     f8. d8.<a8>
+    C     c+8.e8.g8
+    C     <f2 a4>d4
+    C     e2 c2
+    C     f2 e2<
+    C    |
+    C     >d2 d8c+8<b8>c+8<
+    C    ]2
+    C    l16v-5>b-&v+1b-&v+1b-&v+1b-&v+1b-&v+1b-8.& v+1b-4&v-1b-4<
+
+    C   |
+
+    C    v-1
+    C    ffffrff8ffffrff8b-b-b-b-rb-b-8aaaaraa8
+    C    >ffffrff8ffffrff8b-b-b-b-rb-b-8aaaara<
+
+    C    v-1
+    C    q8 l64>agfedc<bal16 
+
+    C    q4
+    C    [l16
+    C     fa>d<fa>d<fa >d<fa>d<gb->e-<b-
+    C     fa>d<fa>d<fa >d<fa>d<gg>ce<
+    C    ]2
+    C    v+2
+    C   ]3
+
+    C   ar8ar8aa8.r8v0r4 
+
+  ;=============================================
+  ; D <- 2 アルト
+  ;=============================================
+    D r16 ;wait
+    D   r8.
+    ;D   h21,2,1,1
+
+    D   [
+
+    D    @4 v12 o5 q8
+
+    D    l4>c+2 e2< 
+    D    l16>>gec+<a+gec+<b-> c+dedc+def< 
+
+    D    v-1 q6
+    ;D    h3,1,2,-2
+
+    D    l32 > g2a+2  >e4.d8c+2<  g2a+2  >e2< < 
+
+    D    v+1
+    ;D    h21,2,1,1
+
+    D    l8>c+<ab>c+< 
+
+    D    [ q8
+    D     [
+    D      l16 agef16^4  >f8e8d8c8< 
+    D     ]2
+
+    D     a8.f8.a8 
+    D     >c8.<g8.>c8 
+    D     d8.<a8.f8 
+    D     g8.>c+8.e8 
+    D     <d2 f4a4 
+    D     >c2 <g2 
+    D     >d2 c2< 
+    D    |
+    D     a2 a8a8r8a8 
+    D    ]2
+    D    l16v-5>g &v+1g &v+1g &v+1g &v+1g &v+1g 8.& v+1g 4&v-1g 4< 
+
+    D   |
+
+    D    v-1
+    D    ddddrdd8ccccrcc8ffffrff8eeeeree8 
+    D    >ddddrdd8ccccrcc8ffffrff8eeeere< 
+
+    D    v-1
+    D    q8 l64>edc<bagfel16 
+
+    D    q4
+    D    [l16
+    D     ad>f<ad>f<ad >f<ad>f<b->e-ge-< 
+    D     ad>f<ad>f<ad >f<ad>feeg>c<< 
+    D    ]2
+    D    v+2
+    D   ]3
+
+    D   fr8fr8ff8.r8v0r4 
+
+  ;=============================================
+  ; E <- 3 テノール
+  ;=============================================
+    E r16 ;wait
+    E   r8.
+    ;E   h21,2,1,1
+
+    E   [
+
+    E    @4 v12 o5 q8
+
+    E    l4>e2 g2< 
+    E    l16>>ec+<a+gec+<a+g> efg+fefg+a< 
+
+    E    v-1 q6
+    ;E    h3,1,2,-2
+
+    E    l32 > e2g2   a+4.a8g2    e2g2   a+2  < 
+
+    E    v+1
+    ;E    h21,2,1,1
+
+    E    l8>ec+de<
+
+    E    [ q8
+    E     [
+    E      l16>dc<ga16^4 >a8g8f8e8<
+    E     ]2
+
+    E     >d8.<a8.>d8
+    E     e8. c8.e8
+    E     f8. d8.<a8>
+    E     c+8.e8.g8
+    E     <f2 a4>d4
+    E     e2 c2
+    E     f2 e2<
+    E    |
+    E     >d2 d8c+8<b8>c+8<
+    E    ]2
+    E    l16v-5>b-&v+1b-&v+1b-&v+1b-&v+1b-&v+1b-8.& v+1b-4&v-1b-4<
+
+    E   |
+
+    E    v-1
+    E    ffffrff8ffffrff8b-b-b-b-rb-b-8aaaaraa8
+    E    >ffffrff8ffffrff8b-b-b-b-rb-b-8aaaara<
+
+    E    v-1
+    E    q8 l64>c+<bagfedcl16 
+
+    E    q4
+    E    [l16
+    E     fa>d<fa>d<fa >d<fa>d<gb->e-<b-
+    E     fa>d<fa>d<fa >d<fa>d<gg>ce<
+    E    ]2
+    E    v+2
+    E   ]3
+
+    E   dr8dr8dd8.r8v0r4 
+
+  ;=============================================
+  ; F G H RHYTHM
+  ;=============================================
+
+    ;=============================================
+    ; RHYTHM mode Setup
+    ;=============================================
+
+    ;=============================================
+    ; F
+    ;=============================================
+      F r16 ;wait
+      F l8 vm14vb14vs14vh8
+      F b16 s8
+      F [
+      F  [b16b16s8]8 
+      F  [b16h16h16s16b16|s16b16b16]4 s16s16s16
+      F  [b16h16h16s16b16s16b16b16]3 b16s16s16s16 [vs+1s16]4 vs14
+      F  [ [b16h16s16h16]15 s16s16s16s16 [b16h16s16h16]14 | [b16s16s16]2 b16s16 ]2
+      F  b16r16s16r16 [r32]4 vm-2 [r32]4 vm+2 
+      F |
+      F  [b16h16s16h16]15 vb+1 b16b16b16b16 vb-1
+      F  [[b16h16h16]2 s8 | [b16b16s16b16]2 ]4
+      F  [b16|b16s16]2 b16s16s16s16
+      F ]3
+      F s16b16b16s16b16b16s16s16b16r16r4

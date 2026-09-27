@@ -79,13 +79,13 @@ B *1 ((r32f4&f32<a32>c32f32a32f32c32f32g8.&g32 )) gbb2
 B *3 g32e32c32g32e32c32g32e32g64g64g32g32g32e32e32c32c32 
 B ]0
 
-C l32 q6 v14 o3 [
-C @14q6v10 [
+C l32 @14q6 v14 [
+C [ o2
 C [araa]4 [grgg]4 [frff]4 [grgg]2 
 C [eree]2 [araa]4 [grgg]4 [frff]2 
 C [grgg]2 [araa]4 
 C ]2 
-C @12q6v13 ffff>f<ff>fr4<gggg>g<gg>
+C ffff>f<ff>fr4<gggg>g<gg>
 C gr4cccc>c<cc>cr4o2 aaaa>a<
 C aa>a<gggg>g<gg>g<ffff>f<
 C ff>fr4<gggg>g<gg>gr4<aaa

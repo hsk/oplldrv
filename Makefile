@@ -17,7 +17,9 @@ build: 6448 ihx2bin
 	@sdcc -mz80 $(OPTION) $(FRAMES_OPT) -D SRC=\"data/$(SRC).h\" main.c oplldrv.rel --opt-code-speed --no-std-crt0 -o a.ihx
 	@./ihx2bin a.ihx -o a.bin
 	@./6448 a.bin > result
-	@$(OPEN) opll.wav
+#	@$(OPEN) opll.wav
+	cp opll.wav mgs.wav
+	@$(OPEN) mgs.wav
 	@make clean
 a:
 	make build -e "OPTION=-D OPT=1" -e "SRC=spehari"
@@ -40,7 +42,7 @@ t3:
 t3c:
 	make build -e "SRC=drum" -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1"
 
-01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30 40 41 42:
+01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30 40 41 42 55 58:
 	make build -e "OPTION=-D OPT=1 -D OPT2=1 -D OPT3=1" -e "SRC=ys2_$@"
 
 ys2_%:
@@ -50,7 +52,7 @@ ys2_%:
 # 同じ MML を oplldrv と MGSDRV (bin/msxplay) で鳴らし、OPLL への書き込みを bin/mgscmp.py で比べる
 # result や a.bin を共有するので並列に動かさない
 .NOTPARALLEL:
-YS2 = 01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30 40 41 42
+YS2 = 01 02 03 04 05 06 07 08 09 10 11 13 14 15 16 17 18 19 20 21 22 23 24 26 27 28 29 30 40 41 42 50 51 52 53 54 55 56 57 58 59
 mgscmp: $(addprefix mgscmp-,$(YS2))
 	@cat mgscmp/*.txt | grep -E '^==|合計'
 mgscmp-%: bin/msxplay/node_modules
@@ -59,6 +61,10 @@ mgscmp-%: bin/msxplay/node_modules
 	@cp result mgscmp/ys2_$*.opll.log
 	@node bin/msxplay/mgs2log.mjs res/ys2_$*.mml --frames $$(grep -c '^wait' result) > mgscmp/ys2_$*.mgs.log
 	@python3 bin/mgscmp.py mgscmp/ys2_$*.opll.log mgscmp/ys2_$*.mgs.log $(V) | tee mgscmp/ys2_$*.txt
+# MGSDRV で鳴らして聞く: make m01 (FRAMES を付けなければ 60 秒。結果は mgs.wav)
+$(addprefix m,$(YS2)): m%: bin/msxplay/node_modules
+	@node bin/msxplay/mgs2log.mjs res/ys2_$*.mml --frames $(or $(FRAMES),3600) --wav mgs.wav > /dev/null
+	@$(OPEN) mgs.wav
 bin/msxplay/node_modules: bin/msxplay/package.json
 	cd bin/msxplay && npm install
 	@touch $@
@@ -83,4 +89,4 @@ ihx2bin: bin/ihx2bin.cpp
 clean:
 	@rm -rf *.ihx *.lk *.noi *.lst *.map *.sym *.rel *.bin a.asm oplldrv.asm
 distclean: clean
-	rm -rf 6448 ihx2bin result opll.wav psg.wav sng.wav opll.mp4 mgscmp bin/msxplay/node_modules
+	rm -rf 6448 ihx2bin result opll.wav mgs.wav psg.wav sng.wav opll.mp4 mgscmp bin/msxplay/node_modules
