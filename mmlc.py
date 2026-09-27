@@ -19,11 +19,14 @@ PSLOAD="PSLOAD"
 PSLAON="PSLAON"
 PSUSON="PSUSON"
 PSUSOFF="PSUSOFF"
+PTONEF="PTONEF"
 PDRUMV="PDRUMV"
 PDRUMV1="PDRUMV1"
 PDRUMV2="PDRUMV2"
 PNEXTS="PNEXTS"
 PBREAKS="PBREAKS"
+# ドライバの音程表と同じ F-Number (o4a = 290)
+TONES=[172,182,194,205,217,230,244,258,273,290,307,325]
 def ptn(p,s,m):
   v = re.match(p,s)
   if v==None: m[:]=[""]; return False
@@ -207,7 +210,7 @@ def loop_expand(chs):
     after=0
   def expand(n,ch):
     G.before+=len(ch)
-    G.volume=15; G.octave=4; G.at=None; G.dv={}
+    G.volume=15; G.octave=4; G.at=None; G.dv={}; G.dt=0
     r = []
     stack = []
     i = -1
@@ -221,14 +224,15 @@ def loop_expand(chs):
           case ["v+",n]:G.volume+=n
           case ["o",n]: G.octave=n-1
           case ["@",n]: G.at=n
+          case ["\\",n]: G.dt=n
           case ["drum_v",a,"",n]: G.dv=dict(G.dv); G.dv[a]=int(n)
           case ["drum_v",a,sign,n]: G.dv=dict(G.dv); G.dv[a]=G.dv.get(a,0)+(int(n) if sign=="+" else -int(n))
           case ["<"] if 0<G.octave: G.octave-=1
           case [">"] if G.octave<7: G.octave+=1
-          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv])
-          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv)
+          case ["["]: stack.append([len(r),None,G.volume,G.octave,None,G.at,G.dv,G.dt])
+          case ["|"]: stack[-1][1]=len(r); stack[-1][4]=(G.volume,G.octave,G.at,G.dv,G.dt)
           case ["]",n]:
-            [start,br,vol,octave,brstate,at,dv]= stack.pop()
+            [start,br,vol,octave,brstate,at,dv,dt]= stack.pop()
             if br == None: br=len(r)
             # オクターブに依存するループか: 本体で o より前に音符か < > がある
             use_octave = False
@@ -240,14 +244,19 @@ def loop_expand(chs):
             for c in r[start+1:]:
               if c[0] == "@": break
               if c[0] == "tone" and c[1] != "r": use_at = True; break
+            # デチューンに依存するループか: 本体で \ より前に音符がある
+            use_dt = False
+            for c in r[start+1:]:
+              if c[0] == "\\": break
+              if c[0] == "tone" and c[1] != "r": use_dt = True; break
             # ドラムの楽器ごとの相対音量 (vs+1 など) で 1 周ごとに音量が変わるループも展開する
-            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at) or G.dv != dv) and n!=0: # 状態が違うので展開する
+            if (G.volume != vol or (use_octave and G.octave != octave) or (use_at and G.at != at) or (use_dt and G.dt != dt) or G.dv != dv) and n!=0: # 状態が違うので展開する
               # 展開したあとのオクターブ: 最後の周の | (なければ終わり) の時点の値。
               # オクターブに依存するループなら、1 周の変化 x (n-1) が積み重なる
               # (音量は今までどおり 1 周した後の値のまま。直すと展開が増えるので別に考える)
               bo = brstate[1] if brstate else G.octave
               G.octave = bo+(G.octave-octave)*(n-1) if use_octave else bo
-              if brstate: G.at = brstate[2]
+              if brstate: G.at = brstate[2]; G.dt = brstate[4]
               G.dv = {k: G.dv[k]+(G.dv[k]-dv.get(k,0))*(n-1) for k in G.dv} # 相対の変化は n 周分
               before=len(r)
               loop1=r[start+1:br]
@@ -264,7 +273,7 @@ def loop_expand(chs):
               G.after += after-before
               continue
             # 展開しないループで | があれば、ループのあとは | の時点の状態になる
-            if brstate: G.volume,G.octave,G.at,G.dv = brstate
+            if brstate: G.volume,G.octave,G.at,G.dv,G.dt = brstate
       r.append(v)
     return r
   r = {}
@@ -286,6 +295,7 @@ def loop_state(tokens, st, drum):
         case ["<"] if st["o"]>0: st["o"]-=1
         case [">"] if st["o"]<7: st["o"]+=1
         case ["@",n]: st["at"]=n
+        case ["\\",n]: st["dt"]=n
         case ["v",n] if drum: st["rv"]=n; st["dv"]={k:n for k in st["dv"]}
         case ["v",n]: st["v"]=n
         case ["v-"|"v+",n] if drum: st["rv"]=min(15,max(0,st["rv"]+n)); st["dv"]={k:st["rv"] for k in st["dv"]}
@@ -342,9 +352,10 @@ def unroll_infinite(name, tokens, drum):
   else:
     if uses("v",("v-","v+")): keys.append("v")
     if uses("@",()): keys.append("at")
+    if uses("\\",()): keys.append("dt")
   if not keys: return tokens
   key=lambda st: tuple(str(st[k]) for k in keys)
-  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
+  st=loop_state(tokens[:start], {"o":4,"v":15,"at":None,"dt":0,"rv":15,"dv":{k:15 for k in "bsmch"}}, drum)
   k=0; s0=st
   while True:
     nx=loop_state(body, st, drum)
@@ -354,7 +365,7 @@ def unroll_infinite(name, tokens, drum):
       print(f"warning: {name} 無限ループの状態が 16 周で落ち着かないので展開しない",file=sys.stderr)
       return tokens
   if k==0: return tokens
-  names={"o":"オクターブ","v":"音量","at":"音色","rv":"ドラムの基準の音量","dv":"ドラムの音量"}
+  names={"o":"オクターブ","v":"音量","at":"音色","rv":"ドラムの基準の音量","dv":"ドラムの音量","dt":"デチューン"}
   changed=[k for k in keys if str(s0[k])!=str(loop_state(body, s0, drum)[k])]
   print(f"warning: {name} の無限ループは 1 周で {'・'.join(names[k] for k in changed if k!='dv' or 'rv' not in changed)} が変わるので、"
         f"MGSDRV と同じに鳴らすため本体 ({len(body)} コマンド) を {k} 周分展開した (データが大きくなる)",file=sys.stderr)
@@ -381,7 +392,7 @@ def mml_compile(name,chs,loops=2):
     G.n2i[n]=i
     G.i2n[i]=n
     G.old_volume=15; G.r = []; G.at = 1
-    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False
+    G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0
     G.intro = None # 一番外側の無限ループ [ ]0 の前の長さ (1/60秒単位)
     G.old_drum_v=[255,255,255]; G.drum_v={"b":15,"s":15,"m":15,"c":15,"h":15}
     G.drum_rv=15 # リズムの ( ) の基準になる音量。v と vb などで最後に指定した値 (MGSDRV と同じ)
@@ -448,7 +459,14 @@ def mml_compile(name,chs,loops=2):
                       b=notes[b];w = w/192
                       #print(f"w {w} q {G.q}")
                       outvolume()
-                      p(f"/*PTONE,*/{b+G.o*12}")
+                      if G.detune:
+                        # デチューン (MGSDRV と同じ)。F-Number に足して、172〜344 から出たらブロックをまたぐ
+                        n=b+G.o*12; f=TONES[n%12]+G.detune; blk=n//12
+                        while f<172: f+=173; blk-=1
+                        while f>=345: f-=173; blk+=1
+                        blk&=7
+                        p(PTONEF,f&255,(blk<<1)|(f>>8))
+                      else: p(f"/*PTONE,*/{b+G.o*12}")
                       # スラー & でつなぐ音は q で詰めずに最後まで鳴らす (MGSDRV と同じ)
                       q = 1 if vi < len(ch) and ch[vi][0] == "&" else G.q
                       outwait(f"tone {b}", False,PWAIT,w*q)
@@ -505,7 +523,7 @@ def mml_compile(name,chs,loops=2):
                       if len(G.stack) == 0 and n1 == 0: G.intro = al
                       if br: # ブレイクアドレス
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
-                        G.o,G.volume,G.old_volume,G.at,G.q = brstate
+                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune = brstate
                         pos = len(G.r) - br - 2
                         if short_br: G.r[br]= f"{pos}"
                         else:
@@ -521,7 +539,7 @@ def mml_compile(name,chs,loops=2):
                       G.stack[-1][3]=len(G.r)+1
                       G.stack[-1][4]=G.all-G.stack[-1][1]
                       G.stack[-1][5]=G.all2-G.stack[-1][2]
-                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q)
+                      G.stack[-1][7]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune)
                       p(PBREAK,None,None)
         case ["drum",v,w]: w=w/192;out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");outwait(f"drum {v}",None,PWAIT,w)
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
@@ -530,6 +548,7 @@ def mml_compile(name,chs,loops=2):
         case ["&"]: p(PSLAON)
         case ["so"]: p(PSUSON)
         case ["sf"]: p(PSUSOFF)
+        case ["\\",n]: G.detune=n
         case v:       print(f"unknown {v}")
     vi = 0
     while vi<len(ch):

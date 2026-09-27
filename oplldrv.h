@@ -49,6 +49,7 @@ typedef struct PSGDrvCh {
 #define PSLOAD  0x8D
 #define PSUSON  0x8E
 #define PSUSOFF 0x8F
+#define PTONEF  0x90 // デチューンした音。F-Number の下位 8 ビット、ブロックと上位 1 ビット、長さ
 
 void p_play(u8 **bs,u8* stack);
 void p_update(void);

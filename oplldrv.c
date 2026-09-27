@@ -197,6 +197,18 @@ void p_exec(PSGDrvCh* ch) {
     case PSLAON: ch->sla=1; break;
     case PSUSON: ch->sus=0x20; break;
     case PSUSOFF: ch->sus=0; break;
+    case PTONEF:{ // デチューンした音。音程をデータで持つ
+                  if (!ch->sla) {
+                    ym2413(ch->no20,0);
+                  }
+                  ch->sla=0;
+                  ym2413(ch->no10,*ch->pc++);
+                  a = *ch->pc++|ch->sus;
+                  ch->tone=a;
+                  ym2413(ch->no20,(1<<4)|a);
+                  a=*ch->pc++;ch->wait=a;
+                  return;
+                }
     case PDRUMV2:{ // 0x37 と 0x38 に同じ音量を書く
                   u8 v=*ch->pc++;
                   ym2413(0x37,v);
@@ -235,7 +247,8 @@ void p_exec(PSGDrvCh* ch) __naked {
       cp #PDRUMV2 $ jp c,13$ $ jp z,18$
       cp #PDRUMV $ jp c,19$ $ jp z,15$
       cp #PBREAK $ jp c,9$ $ jp z,10$
-      cp #PSUSON $ jp c,11$ $ jp z,14$ $ jp 20$
+      cp #PSUSON $ jp c,11$ $ jp z,14$
+      cp #PTONEF $ jp c,20$ $ jp 21$
     ; ) {
     3$:; case PTONE:
       ld d,a
@@ -250,6 +263,7 @@ void p_exec(PSGDrvCh* ch) __naked {
       ; u8* iy = &((u8*)tones)[a];
       add a, #<(_tones) $ ld e, a $ ld a, #0x00 $ adc a, #>(_tones) $ ld d, a
       //ld de,#_tones $ add e $ ld e,a $ jr nc, 55$ $ inc d $ 55$:
+    32$: ; PTONEF はここから同じ
       ; a = iy[0];
       ; ym2413(0x10+ch->no,a);
         ld a,IX(P_NO10) $ out (_IOPortOPLL1), a
@@ -407,6 +421,15 @@ void p_exec(PSGDrvCh* ch) __naked {
     20$: ; case PSUSOFF:
       ld IX(P_SUS),#0; ch->sus=0;
       jp 1$ ; break;
+    21$: ; case PTONEF: デチューンした音。音程をデータで持つ
+      ld a,IX(P_NO20) $ ld c,a
+      xor a $ cp IX(P_SLA) $ jp nz, 211$; if (!ch->sla) {
+        ld a,c $ out (_IOPortOPLL1), a
+        xor a $ out (_IOPortOPLL2), a
+      211$: ; }
+      ld IX(P_SLA),#0 ; ch->sla=0
+      ld e,l $ ld d,h $ inc hl $ inc hl ; de = 音程の 2 バイト
+      jp 32$
     18$: ; case PDRUMV2: 0x37 と 0x38 に同じ音量を書く
       ld a,#0x37 $ out (_IOPortOPLL1), a
       ld a,(hl) $ inc hl $ out (_IOPortOPLL2), a $ ld c,a
