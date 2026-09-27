@@ -151,20 +151,25 @@ def parse_channel(ch,src,drum):
     def vlen2():
       nonlocal src,pos
       l = vlen()
+      # 長さがなくて付点があれば既定の長さに付ける (MGSDRV と同じ。l8 の c. は c8.)
+      if l == None and src[pos]=="." and default!=Exception: l = default
       if l == None: return None
       d = l
       while src[pos]==".": pos+=1; d//=2; l+=d # 付点は直前に足した長さの半分 (切り捨て)
       return l
     nonlocal src,pos; spos = pos
     l = vlen2()
+    # ^ は長さを足す。^ の前後に長さがなければ既定の長さを使う (MGSDRV と同じ。l8 の c^4 は c8^4、c4^ は c4^8)
+    if l==None and src[pos]=="^" and default!=Exception: l = default
     if l==None:
       if default!=Exception: return default
       fail_at(ch,pos,"長さがない")
     while src[pos]=="^":
       pos+=1
-      if src[pos] == c: pos+=1
       l2 = vlen2()
-      if l2==None: fail_at(ch,pos,"^ のあとに長さがない")
+      if l2==None:
+        if default==Exception: fail_at(ch,pos,"^ のあとに長さがない")
+        l2 = default
       l += l2
     return l
   def o(*data): nonlocal r; r.append(list(data))
