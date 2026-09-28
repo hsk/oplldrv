@@ -67,6 +67,56 @@ typedef struct PSGCh {
 #define ENV_R 4 // リリース: -RR
 PSGCh psgch[3];
 u8 psg_size;
+// アセンブラ版で使う PSGCh の位置
+#define Q_WAIT 0
+#define Q_PC   1
+#define Q_SP   3
+#define Q_VOL  5
+#define Q_REG  6
+#define Q_VREG 7
+#define Q_SLA  8
+#define Q_ENV  9
+#define Q_KOFF 10
+#define Q_E    11
+#define Q_EI   12
+#define Q_EA   13
+#define Q_ED   14
+#define Q_ES   15
+#define Q_ESR  16
+#define Q_ER   17
+#define Q_OUT  18
+#define Q_LFO  19
+#define Q_LA   20
+#define Q_LB   21
+#define Q_LC   22
+#define Q_LD   23
+#define Q_LT   24
+#define Q_LCNT 25
+#define Q_LSTEP 26
+#define Q_LVAL 27
+#define Q_BASE 29
+#define Q_SIZE 31
+static void psg_play(u8 **bs,u8* sp,u8 n) {
+  PSGCh *p = psgch;
+  psg_size=n;
+  ay(7,0xB8); // トーンだけ出す (ノイズなし)
+  for(u8 i=0;i<3;i++) ay(8+i,0);
+  for(u8 i=0;i<n;i++,p++) {
+    p->pc=bs[i]+1;
+    p->wait=1;
+    p->vol=0;
+    p->reg=i+i;
+    p->vreg=8+i;
+    p->sla=0;
+    p->env=0;
+    p->lfo=0;
+    p->la=p->lb=p->lc=p->ld=0;
+    p->base=0xffff;
+    p->sp=sp-1;
+    sp += bs[i][0]*2;
+  }
+}
+#ifndef OPT
 // ADSR を 1 段進めて、音量が変わっていれば書く。キーオフしてもアタックとディケイは続ける (MGSDRV と同じ)
 static void psg_env(PSGCh* ch) {
   u8 e=ch->e;
@@ -190,26 +240,6 @@ static void p_exec_psg(PSGCh* ch) {
     }
   }
 }
-static void psg_play(u8 **bs,u8* sp,u8 n) {
-  PSGCh *p = psgch;
-  psg_size=n;
-  ay(7,0xB8); // トーンだけ出す (ノイズなし)
-  for(u8 i=0;i<3;i++) ay(8+i,0);
-  for(u8 i=0;i<n;i++,p++) {
-    p->pc=bs[i]+1;
-    p->wait=1;
-    p->vol=0;
-    p->reg=i+i;
-    p->vreg=8+i;
-    p->sla=0;
-    p->env=0;
-    p->lfo=0;
-    p->la=p->lb=p->lc=p->ld=0;
-    p->base=0xffff;
-    p->sp=sp-1;
-    sp += bs[i][0]*2;
-  }
-}
 // LFO を 1 フレーム進める (MGSDRV と同じく、命令を読む前)
 static void psg_lfo(PSGCh* ch) {
   if (--ch->lt) return;
@@ -231,6 +261,253 @@ static void psg_update(void) {
     if (p->env) psg_env(p);
   }
 }
+#else
+#define $ __endasm;__asm
+// PSG を 1 フレーム進める (アセンブラ版。C 版の psg_lfo・p_exec_psg・psg_env と同じことをする)
+static void psg_update(void) __naked {
+  __asm
+  ld a,(_psg_size) $ or a $ ret z
+  push ix
+  ld ix,#_psgch
+  ld b,a
+  1$: ; for (i=psg_size;i;i--,p++) {
+    push bc
+    ld a,IX(Q_LFO) $ or a $ call nz,60$ ; if (p->lfo) psg_lfo(p);
+    dec IX(Q_WAIT) $ jr nz,2$ ; p_exec_psg(p): if (--ch->wait) return;
+      inc IX(Q_WAIT) ; ch->wait++;
+      call 10$
+    2$:
+    ld a,IX(Q_ENV) $ or a $ call nz,40$ ; if (p->env) psg_env(p);
+    pop bc
+    ld de,#Q_SIZE $ add ix,de
+    djnz 1$
+  pop ix
+  ret
+
+  10$: ; p_exec_psg: 命令を読む。hl = ch->pc
+    ld l,IX(Q_PC) $ ld h,IX(Q_PC+1)
+  11$: ; while (1) {
+    ld a,(hl) $ inc hl ; u8 a = *ch->pc++;
+    ; switch (a): よく使う命令ほど前で、cp で 2 つずつ振り分ける (FM の p_exec と同じ)
+    cp #PDRUM $ jp c,20$ ; 音符
+    cp #PWAIT $ jp c,13$ $ jp z,14$ ; PKEYOFF (0x60〜0x7F は使わない) PWAIT
+    cp #PEND $ jp c,15$ $ jp z,16$ ; PVOLUME PEND
+    cp #PNEXTS $ jp c,17$ $ jp z,18$ ; PLOOP PNEXTS
+    cp #PSLAON $ jp c,19$ $ jp z,21$ ; PBREAKS PSLAON
+    cp #PBREAK $ jp c,22$ $ jp z,23$ ; PNEXT (0x88〜0x8A は使わない) PBREAK
+    cp #PTONEF $ jp c,24$ $ jp z,25$ ; PSLOAD (0x8E・0x8F は使わない) PTONEF
+    cp #PLFOOFF $ jp c,26$ $ jp z,27$ ; PLFO (0x91・0x92 は使わない) PLFOOFF
+    jp 11$
+  13$: ; case PKEYOFF: ADSR ならキーオフの印、なければ音量 0
+    ld a,IX(Q_ENV) $ or a $ jr z,131$
+      ld IX(Q_KOFF),#1 $ jr 14$
+    131$:
+      ld a,IX(Q_VREG) $ out (0xa0),a
+      xor a $ out (0xa1),a
+  14$: ; case PWAIT:
+    ld a,(hl) $ inc hl $ ld IX(Q_WAIT),a ; ch->wait=*ch->pc++;
+  30$: ; return: ch->pc を戻す
+    ld IX(Q_PC),l $ ld IX(Q_PC+1),h
+    ret
+  15$: ; case PVOLUME: 音量は次の音 (ADSR なら次の段) で書く
+    ld a,(hl) $ inc hl $ ld IX(Q_VOL),a
+    jp 11$
+  16$: ; case PEND:
+    dec hl $ xor a $ ld IX(Q_WAIT),a $ ld IX(Q_ENV),a $ ld IX(Q_LFO),a
+    ld a,IX(Q_VREG) $ out (0xa0),a
+    xor a $ out (0xa1),a
+    jr 30$
+  17$: ; case PLOOP:
+    ld e,IX(Q_SP) $ ld d,IX(Q_SP+1)
+    inc de $ ld a,(hl) $ inc hl $ ld (de),a ; *(++ch->sp) = *ch->pc++
+    inc de $ ld a,(hl) $ inc hl $ ld (de),a ; *(++ch->sp) = *ch->pc++
+    ld IX(Q_SP),e $ ld IX(Q_SP+1),d
+    jp 11$
+  18$: ; case PNEXTS: 飛び先を符号付き 1 バイトで持つ形
+    ld a,(hl) $ inc hl $ ld c,a $ rla $ sbc a,a $ ld b,a ; bc = (s8)*ch->pc++;
+    jr 181$
+  22$: ; case PNEXT:
+    ld c,(hl) $ inc hl $ ld b,(hl) $ inc hl ; bc = *(u16*)ch->pc; ch->pc+=2
+  181$:
+    ld e,IX(Q_SP) $ ld d,IX(Q_SP+1) $ ld a,(de) $ dec a $ ld (de),a ; (*ch->sp)--;
+    jr z,186$ ; if (*ch->sp) {
+      inc a $ jr nz,182$ ; if (*ch->sp==255) (*ch->sp)++; 無限ループ。FM と違ってキーオフはしない
+        ld (de),a
+      182$:
+      dec de
+      ld a,(hl) $ inc hl ; u8 a = *ch->pc++; (dda wait)
+      ex de,hl $ add a,(hl) $ ex de,hl ; a += ch->sp[-1];
+      ld e,(hl) ; u8 e = *ch->pc; (bc は飛び先なので e に読み、sp[-1] の番地は下で読み直す)
+      add hl,bc ; ch->pc += bc;
+      cp e $ jr c,183$ ; if (e <= a) {
+        sub a,e ; a -= e;
+        ld e,IX(Q_SP) $ dec e $ ld (de),a ; ch->sp[-1]=a;
+        jp 30$ ; return;
+      183$: ; }
+      ld e,IX(Q_SP) $ dec e $ ld (de),a ; ch->sp[-1]=a;
+      jp 11$ ; break;
+    186$: ; }
+    dec de $ dec de $ ld IX(Q_SP),e $ ld IX(Q_SP+1),d ; ch->sp-=2;
+  187$: ; dda wait: de = ch->sp
+    ld a,(hl) $ inc hl ; u8 a = *ch->pc++;
+    inc de
+    ld c,a $ ld a,(de) $ add a,c ; a += ch->sp[1];
+    ld c,(hl) $ inc hl ; u8 c = *ch->pc++;
+    cp c $ jr c,188$ ; if (c <= a) {
+      sub a,c $ ld (de),a ; a -= c; ch->sp[1]=a;
+      jp 30$ ; return;
+    188$: ; }
+    ld (de),a ; ch->sp[1]=a;
+    jp 11$ ; break;
+  19$: ; case PBREAKS: 飛び先を 1 バイト (0〜255) で持つ形
+    ld e,IX(Q_SP) $ ld d,IX(Q_SP+1) $ ld a,(de) $ dec a $ jr nz,191$ ; if (*ch->sp == 1) {
+      ld c,(hl) $ ld b,#0 ; bc = *ch->pc;
+      jr 231$
+    191$: ; }
+    inc hl ; ch->pc+=1;
+    jp 11$
+  23$: ; case PBREAK:
+    ld e,IX(Q_SP) $ ld d,IX(Q_SP+1) $ ld a,(de) $ dec a $ jr nz,239$ ; if (*ch->sp == 1) {
+      ld c,(hl) $ inc hl $ ld b,(hl) $ dec hl ; bc = *(u16*)ch->pc;
+    231$:
+      add hl,bc ; ch->pc += bc;
+      dec de $ dec de $ ld IX(Q_SP),e $ ld IX(Q_SP+1),d ; ch->sp-=2;
+      jr 187$
+    239$: ; }
+    inc hl $ inc hl ; ch->pc+=2;
+    jp 11$
+  21$: ; case PSLAON:
+    ld IX(Q_SLA),#1
+    jp 11$
+  24$: ; case PSLOAD: @n の ADSR (初期値、AR、DR、SL、SR、RR)。レベルは 0 にする
+    ld a,(hl) $ inc hl $ ld IX(Q_EI),a
+    ld a,(hl) $ inc hl $ ld IX(Q_EA),a
+    ld a,(hl) $ inc hl $ ld IX(Q_ED),a
+    ld a,(hl) $ inc hl $ ld IX(Q_ES),a
+    ld a,(hl) $ inc hl $ ld IX(Q_ESR),a
+    ld a,(hl) $ inc hl $ ld IX(Q_ER),a
+    ld IX(Q_E),#0 $ ld IX(Q_ENV),#ENV_R $ ld IX(Q_OUT),#255
+    jp 11$
+  26$: ; case PLFO:
+    ld a,(hl) $ inc hl $ ld IX(Q_LA),a
+    ld a,(hl) $ inc hl $ ld IX(Q_LB),a
+    ld a,(hl) $ inc hl $ ld IX(Q_LC),a
+    ld a,(hl) $ inc hl $ ld IX(Q_LD),a
+    ld IX(Q_LFO),#1
+    call 50$ ; LFO をやり直す
+    jp 11$
+  27$: ; case PLFOOFF:
+    ld IX(Q_LFO),#0
+    jp 11$
+  25$: ; case PTONEF: @\ と \ をかけた音。周期をデータで持つ
+    ld e,(hl) $ inc hl $ ld d,(hl) $ inc hl
+    jr 201$
+  20$: ; 音符: de = psg_tones[a]
+    add a,a
+    add a,#<(_psg_tones) $ ld e,a $ ld a,#0 $ adc a,#>(_psg_tones) $ ld d,a
+    ex de,hl $ ld a,(hl) $ inc hl $ ld h,(hl) $ ld l,a $ ex de,hl
+  201$: ; de = 周期
+    ; 同じ音程を & でつなぐときは、音程も LFO もそのまま (FM と同じ)
+    ld a,IX(Q_SLA) $ or a $ jr z,202$ ; if (!ch->sla || t!=ch->base) {
+      ld a,IX(Q_BASE) $ cp e $ jr nz,203$
+      ld a,IX(Q_BASE+1) $ cp d $ jr z,204$
+      jr 203$
+    202$:
+      call 50$ ; & でないときは速さのタイマーもやり直す
+      jr 205$
+    203$:
+      call 51$ ; & でつなぐときは、ずれだけやり直す
+    205$:
+      ld IX(Q_BASE),e $ ld IX(Q_BASE+1),d ; ch->base=t;
+      ld a,IX(Q_REG) $ out (0xa0),a $ ld a,e $ out (0xa1),a
+      ld a,IX(Q_REG) $ inc a $ out (0xa0),a $ ld a,d $ out (0xa1),a
+    204$: ; }
+    ld a,IX(Q_ENV) $ or a $ jr nz,206$ ; if (!ch->env) ay(ch->vreg,ch->vol)
+      ld a,IX(Q_VREG) $ out (0xa0),a $ ld a,IX(Q_VOL) $ out (0xa1),a
+      jr 208$
+    206$:
+    ld a,IX(Q_SLA) $ or a $ jr z,207$ ; else if (ch->sla) psg_env(ch);
+      push hl $ call 40$ $ pop hl
+      jr 208$
+    207$: ; else キーオン
+      ld a,IX(Q_EI) $ ld IX(Q_E),a $ ld IX(Q_ENV),#ENV_A $ ld IX(Q_KOFF),#0
+    208$:
+    ld IX(Q_SLA),#0 ; ch->sla=0;
+    jp 14$ ; ch->wait=*ch->pc++; return;
+
+  50$: ; LFO をやり直す (タイマーも)
+    ld a,IX(Q_LA) $ add a,IX(Q_LC) $ add a,#2 $ ld IX(Q_LT),a ; ch->lt=ch->la+ch->lc+2;
+  51$: ; ずれだけやり直す
+    xor a $ ld IX(Q_LVAL),a $ ld IX(Q_LVAL+1),a ; ch->lval=0;
+    ld a,IX(Q_LD) $ ld IX(Q_LSTEP),a ; ch->lstep=ch->ld;
+    ld a,IX(Q_LB) $ srl a $ adc a,#0 $ ld IX(Q_LCNT),a ; ch->lcnt=(lb+1)>>1;
+    ret
+
+  40$: ; psg_env: ADSR を 1 段進めて、音量が変わっていれば書く
+    ld a,IX(Q_ENV)
+    cp #ENV_S $ jr nz,41$ ; if (ch->env==ENV_S && ch->koff) ch->env=ENV_R;
+      ld c,IX(Q_KOFF) $ inc c $ dec c $ jr z,41$
+      ld a,#ENV_R $ ld IX(Q_ENV),a
+    41$:
+    ld c,IX(Q_E) ; e
+    dec a $ jr z,42$
+    dec a $ jr z,43$
+    dec a $ jr z,44$
+      ld a,c $ sub IX(Q_ER) $ jr nc,48$ $ xor a $ jr 48$ ; リリース: e = (e<er) ? 0 : e-er;
+    42$: ; アタック: e = (e+ea>255) ? 255 : e+ea; 255 になったらディケイへ
+      ld a,c $ add a,IX(Q_EA) $ jr nc,421$ $ ld a,#255
+      421$:
+      cp #255 $ jr nz,48$
+      ld IX(Q_ENV),#ENV_D $ jr 48$
+    43$: ; ディケイ: e = (e<ed || e-ed<es) ? es : e-ed; SL になったらサステインへ
+      ld a,c $ sub IX(Q_ED) $ jr c,431$
+      cp IX(Q_ES) $ jr nc,432$
+      431$: ld a,IX(Q_ES)
+      432$:
+      cp IX(Q_ES) $ jr nz,48$
+      ld IX(Q_ENV),#ENV_S $ jr 48$
+    44$: ; サステイン: e = (e<esr) ? 0 : e-esr; 0 になったらリリースへ
+      ld a,c $ sub IX(Q_ESR) $ jr nc,441$ $ xor a
+      441$:
+      or a $ jr nz,48$
+      ld IX(Q_ENV),#ENV_R
+    48$:
+    ld IX(Q_E),a
+    ; v = e * (vol+1) >> 8 (掛け算は 1 ビットずつ)
+    ld e,a $ ld d,#0 $ ld hl,#0
+    ld a,IX(Q_VOL) $ inc a
+    49$:
+      srl a $ jr nc,491$
+      add hl,de
+      491$:
+      ex de,hl $ add hl,hl $ ex de,hl
+      or a $ jr nz,49$
+    ld a,h
+    cp IX(Q_OUT) $ ret z ; if (v!=ch->out) { ch->out=v; ay(ch->vreg,v); }
+    ld IX(Q_OUT),a $ ld c,a
+    ld a,IX(Q_VREG) $ out (0xa0),a $ ld a,c $ out (0xa1),a
+    ret
+
+  60$: ; psg_lfo: LFO を 1 フレーム進める (命令を読む前)
+    dec IX(Q_LT) $ ret nz ; if (--ch->lt) return;
+    ld a,IX(Q_LC) $ inc a $ ld IX(Q_LT),a ; ch->lt=ch->lc+1;
+    ld a,IX(Q_LCNT) $ or a $ jr nz,61$ ; if (!ch->lcnt) {
+      ld a,IX(Q_LSTEP) $ neg $ ld IX(Q_LSTEP),a ; ch->lstep=-ch->lstep;
+      ld a,IX(Q_LB) $ inc a ; ch->lcnt=ch->lb+1;
+    61$: ; }
+    dec a $ ld IX(Q_LCNT),a ; ch->lcnt--;
+    ld a,IX(Q_LSTEP) $ ld e,a $ rla $ sbc a,a $ ld d,a
+    ld l,IX(Q_LVAL) $ ld h,IX(Q_LVAL+1) $ add hl,de
+    ld IX(Q_LVAL),l $ ld IX(Q_LVAL+1),h ; ch->lval+=ch->lstep;
+    ex de,hl
+    ld l,IX(Q_BASE) $ ld h,IX(Q_BASE+1) $ or a $ sbc hl,de ; t=ch->base-ch->lval;
+    ld a,IX(Q_REG) $ out (0xa0),a $ ld a,l $ out (0xa1),a
+    ld a,IX(Q_REG) $ inc a $ out (0xa0),a $ ld a,h $ out (0xa1),a
+    ret
+  __endasm;
+}
+
+#endif
 // ヘッダの上位バイト: ビット 0 はリズムモード、ビット 1〜2 は PSG のチャンネル数
 #define HDR_MODE(h) ((h)&1)
 #else
