@@ -54,6 +54,8 @@ typedef struct PSGCh {
   s8 lstep; // 今の向きの 1 段 (±ld)
   s16 lval; // 今のずれ
   u16 base; // 音の周期 (同じ周期を & でつなぐときは LFO を続ける)
+  // アセンブラ版だけで使う: 最後に音量を計算したときのレベルと v。out はこの 2 つから出した値 (lv=255 はまだ計算していない)
+  u8 le, lv;
 } PSGCh;
 #define ENV_A 1 // アタック: +AR。255 になったらディケイへ
 #define ENV_D 2 // ディケイ: -DR。SL になったらサステインへ
@@ -89,7 +91,9 @@ u8 psg_size;
 #define Q_LSTEP 26
 #define Q_LVAL 27
 #define Q_BASE 29
-#define Q_SIZE 31
+#define Q_LE   31
+#define Q_LV   32
+#define Q_SIZE 33
 #ifndef OPT
 // PSG の演奏を始める。チャンネル数は psg_size に入れてから呼ぶ
 static void psg_play(u8 **bs,u8* sp) {
@@ -419,6 +423,7 @@ static void psg_update(void) __naked {
     ld a,(hl) $ inc hl $ ld IX(Q_ESR),a
     ld a,(hl) $ inc hl $ ld IX(Q_ER),a
     ld IX(Q_E),#0 $ ld IX(Q_ENV),#ENV_R $ ld IX(Q_OUT),#255
+    ld IX(Q_LV),#255 ; out を 255 にしたので、音量は計算し直す
     jp 11$
   26$: ; case PLFO:
     ld a,(hl) $ inc hl $ ld IX(Q_LA),a
@@ -512,9 +517,17 @@ static void psg_update(void) __naked {
       ld IX(Q_ENV),#ENV_R
     48$:
     ld IX(Q_E),a
+    ; レベルと v が前に計算したときと同じなら、音量も同じで out に書いてあるので何もしない
+    ; (サステインの SR が 0 のときや、リリースで 0 になったあと)
+    ld c,IX(Q_VOL)
+    cp IX(Q_LE) $ jr nz,480$
+    ld b,a $ ld a,c $ cp IX(Q_LV) $ ret z
+    ld a,b
+    480$:
+    ld IX(Q_LE),a $ ld IX(Q_LV),c
     ; v = e * (vol+1) >> 8 (掛け算は 1 ビットずつ)
     ld e,a $ ld d,#0 $ ld hl,#0
-    ld a,IX(Q_VOL) $ inc a
+    ld a,c $ inc a
     49$:
       srl a $ jr nc,491$
       add hl,de
