@@ -59,8 +59,7 @@ typedef struct PSGCh {
   u8 lcnt;  // 折り返すまでの段数
   s8 lstep; // 今の向きの 1 段 (±ld)
   s16 lval; // 今のずれ
-  u16 base; // 音の周期
-  u8 note;  // 音程表の番号 (同じ音程を & でつなぐときは LFO を続ける)
+  u16 base; // 音の周期 (同じ周期を & でつなぐときは LFO を続ける)
 } PSGCh;
 #define ENV_A 1 // アタック: +AR。255 になったらディケイへ
 #define ENV_D 2 // ディケイ: -DR。SL になったらサステインへ
@@ -91,6 +90,7 @@ static void psg_env(PSGCh* ch) {
 // PSG のチャンネルを 1 フレーム進める。音符は周期と音量を書き、キーオフは音量 0
 static void p_exec_psg(PSGCh* ch) {
   u16 bc;
+  u16 t;
   if (--ch->wait) {
     return;
   }
@@ -98,13 +98,14 @@ static void p_exec_psg(PSGCh* ch) {
   while (1) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
+      t = psg_tones[a];
+    ptone:
       // 同じ音程を & でつなぐときは、音程も LFO もそのまま (FM と同じ)
-      if (!ch->sla || a!=ch->note) {
+      if (!ch->sla || t!=ch->base) {
         // LFO をやり直す。& でつなぐときは速さのタイマーを続ける (FM と同じ)
         if (!ch->sla) ch->lt=ch->la+ch->lc+2;
         ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
-        u16 t = psg_tones[a];
-        ch->note=a; ch->base=t;
+        ch->base=t;
         ay(ch->reg,(u8)t);
         ay(ch->reg+1,(u8)(t>>8));
       }
@@ -174,6 +175,7 @@ static void p_exec_psg(PSGCh* ch) {
                 ch->pc+=2;
                 break;
     case PSLAON: ch->sla=1; break;
+    case PTONEF: t=*(u16*)ch->pc; ch->pc+=2; goto ptone; // @\ と \ をかけた音。周期をデータで持つ
     case PLFO:  ch->la=*ch->pc++; ch->lb=*ch->pc++; ch->lc=*ch->pc++; ch->ld=*ch->pc++;
                 ch->lfo=1;
                 ch->lt=ch->la+ch->lc+2;
@@ -203,7 +205,7 @@ static void psg_play(u8 **bs,u8* sp,u8 n) {
     p->env=0;
     p->lfo=0;
     p->la=p->lb=p->lc=p->ld=0;
-    p->note=255;
+    p->base=0xffff;
     p->sp=sp-1;
     sp += bs[i][0]*2;
   }

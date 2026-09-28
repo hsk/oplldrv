@@ -158,6 +158,7 @@ def parse_env(n,src):
     r.append((at,int(d[i],16))); at=None; i+=1
   if not r: fail(f"@e{n}: エンベロープのデータがない")
   ENVS[n]=r
+PSG_TONES=[3421,3228,3047,2876,2715,2562,2419,2283,2155,2034,1920,1812] # PSG の o1 の周期 (MGSDRV と同じ)
 PSG_ENVS={} # PSG の @r (番号 → [ミキサー, ノイズ周期, 初期値, AR, DR, SL, SR, RR])
 def parse_psg_env(n,src):
   try: v=list(map(int,src.split(",")))
@@ -526,6 +527,7 @@ def mml_compile(name,chs,loops=2):
       G.i2n[i]=n
     G.old_volume=-1 if psg else 15; G.r = []; G.at = 1 # PSG は最初の音で必ず音量を出す
     G.psg_on=False # PSG: キーオフせずに鳴っている音のあと (休符の音量 0 が 1 フレーム遅れる)
+    G.psg_env=psg and any(c[0]=="@" for c in ch) # PSG で @r の ADSR を使う (休符の間もリリースで鳴る)
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0; G.fine=0 # \ と @\
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
@@ -632,18 +634,22 @@ def mml_compile(name,chs,loops=2):
                       e=PSG_ENVS[v]
                       if e[0] not in (0,1): fail(f"チャンネル {name}: @r{v} のミキサー {e[0]} はまだ使えない (0 か 1)")
                       p(PSLOAD,*e[2:])
-        case [c,*_] if psg and c in ("tone_p","@e","so","sf","\\","@\\","y","drum","drum_v"):
+        case [c,*_] if psg and c in ("tone_p","@e","so","sf","y","drum","drum_v"):
                       fail(f"チャンネル {name}: PSG ではまだ {c} を使えない")
         case ["tone","r",a]:
                       # エンベロープを使っている間は、音量はエンベロープの値のまま (最後の値で止まる)
-                      # PSG は音量を次の音で書くので、休符では出さない
+                      # PSG は ADSR を使わなければ休符の間は音量 0 なので、音量は次の音で出す
                       if not G.env and not G.env_q and not psg: outvolume()
                       # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
                       # 0x26〜0x28 がリズムの音程なので書かない
                       advance(a)
-                      # PSG: 鳴っている音のあとの休符は、MGSDRV は音量 0 を 1 フレーム遅れて書く
-                      # (q で詰めた音と曲の終わりは遅れない)。1 フレーム待ってからキーオフする
-                      if psg and G.psg_on: outwait("r",PWAIT,PWAIT,min(G.all+1,G.fr)); G.psg_on=False
+                      # PSG: MGSDRV は休符のキーオフと v を次のフレームから効かせる (ADSR を進めてから命令を読むので。
+                      # q で詰めた音と曲の終わりは遅れない)。鳴っている音のあとの休符と、ADSR の休符で音量を変えるときは、
+                      # 1 フレーム待ってからキーオフと音量を出す
+                      if psg:
+                        vchg=G.psg_env and 15-G.volume!=G.old_volume
+                        if G.psg_on or vchg: outwait("r",PWAIT,PWAIT,min(G.all+1,G.fr)); G.psg_on=False
+                        if vchg and G.all<G.fr: outvolume()
                       if chs["#"]["opll_mode"] and i >= 6 and not psg: outwait("r",PWAIT,PWAIT,G.fr)
                       else: outwait("r",PKEYOFFL if G.lfo_on and not psg else PKEYOFF,PWAIT,G.fr)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
@@ -678,14 +684,21 @@ def mml_compile(name,chs,loops=2):
                         pi=len(G.r)+3
                         p(PPORTA,porta[1]&255,(porta[0]<<1)|(porta[1]>>8),0,0,0,1 if dl<0 else 0)
                         all0=G.all
-                      elif G.lfo_on and legato and G.lpitch==pitch(b) and not psg:
+                      elif psg:
+                        # PSG: @\ は o1 の表の値に足してからずらし (音が下がる)、\ はずらしたあとで引く (MGSDRV と同じ)。
+                        # どちらかを使う音は周期をデータで持つ (PTONEF)
+                        if G.fine or G.detune:
+                          t=(((PSG_TONES[b]+G.fine)>>G.o)-G.detune)&0xffff
+                          p(PTONEF,t&255,t>>8)
+                        else: p(f"/*PTONE,*/{b+G.o*12}")
+                      elif G.lfo_on and legato and G.lpitch==pitch(b):
                         # LFO をかけた音を同じ音程でスラーでつなぐときは、MGSDRV は何もしない (LFO も続ける)。
                         # 直前の PSLAON を消して、音を出し直さずに待つだけにする
                         del G.r[len(G.r)-1-G.r[::-1].index(PSLAON)]
                         tie=True
-                      elif not psg and (G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12])):
+                      elif G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12]):
                         # デチューンで音程表と違う音は、音程をデータで持つ (PTONEF)。172〜344 から出たらブロックをまたぐ
-                        # LFO をかける音も音程をデータで持つ (PTONEL)。PSG は音程表の番号のまま (ドライバが LFO をかける)
+                        # LFO をかける音も音程をデータで持つ (PTONEL)
                         blk,f=pitch(b)
                         p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
                       else: p(f"/*PTONE,*/{b+G.o*12}")
