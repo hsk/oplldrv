@@ -1,0 +1,13 @@
+; PSG のテスト (音符・休符・v・o・l・q・ループ)
+#opll_mode 0
+#tempo 120
+
+; PSG の o4a は 440Hz (FM の o4a は 220Hz)。@r を使わない音は音量一定で、キーオフ (q・休符) で音量 0
+1 v15 o4 l8 cdefgab>c< r4 q4 c4 d4 q8 e4 f4 v10 [g16a16]3 r8 o2 c2 o7 c4 o1 c4
+; 鳴っている音のあとの休符は、MGSDRV は音量 0 を 1 フレーム遅れて書く (t150 の r96 は 1 フレーム。1 フレームの休符、休符の連続、ループ、q、& でも確かめる)
+1 t150 o4 l4 c r96 d r96 r e r48 f [c8 r8]3 [a8 | r8 b8]2 q7 e r q8 f & r g r2
+2 v12 o5 l16 q6 [cegb]4 v8 [q2 c d e f]2 r4 v13 q8 c1
+3 r2 v9 o3 l4 c&c d r e8.f16 [g a | b]3 >c2
+
+; FM と一緒に鳴らす
+9 @3 v13 o4 l4 cegb >c1

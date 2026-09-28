@@ -21,6 +21,127 @@ static u16 const tones[] = {
   3244, 3254, 3266, 3277, 3289, 3302, 3316, 3330, 3345, 3362, 3379, 3397,
   3756, 3766, 3778, 3789, 3801, 3814, 3828, 3842, 3857, 3874, 3891, 3909,
 };
+#ifdef PSG
+// PSG (MSX の AY-3-8910)。-D PSG=1 のときだけ入る
+__sfr __at 0xA0 IOPortPSG1;
+__sfr __at 0xA1 IOPortPSG2;
+#define ay(reg,parm) {IOPortPSG1 = (reg);IOPortPSG2 = (parm);}
+// 音程表: 周期。MGSDRV と同じ値 (o4a = 254、440Hz)
+static u16 const psg_tones[] = {
+  3421, 3228, 3047, 2876, 2715, 2562, 2419, 2283, 2155, 2034, 1920, 1812,
+  1710, 1614, 1523, 1438, 1357, 1281, 1209, 1141, 1077, 1017,  960,  906,
+   855,  807,  761,  719,  678,  640,  604,  570,  538,  508,  480,  453,
+   427,  403,  380,  359,  339,  320,  302,  285,  269,  254,  240,  226,
+   213,  201,  190,  179,  169,  160,  151,  142,  134,  127,  120,  113,
+   106,  100,   95,   89,   84,   80,   75,   71,   67,   63,   60,   56,
+    53,   50,   47,   44,   42,   40,   37,   35,   33,   31,   30,   28,
+    26,   25,   23,   22,   21,   20,   18,   17,   16,   15,   15,   14,
+};
+PSGDrvCh psgch[3]; // no10 は周期のレジスタ (2ch)、no20 は音量のレジスタ (8+ch)、tone は音量
+u8 psg_size;
+// PSG のチャンネルを 1 フレーム進める。音符は周期と音量を書き、キーオフは音量 0
+static void p_exec_psg(PSGDrvCh* ch) {
+  u16 bc;
+  if (--ch->wait) {
+    return;
+  }
+  ch->wait++;
+  while (1) {
+    u8 a = *ch->pc++;
+    if (a < PDRUM) {
+      u16 t = psg_tones[a];
+      ay(ch->no10,(u8)t);
+      ay(ch->no10+1,(u8)(t>>8));
+      ay(ch->no20,ch->tone);
+      a=*ch->pc++;ch->wait=a;
+      return;
+    }
+    switch (a) {
+    case PKEYOFF: ay(ch->no20,0);
+    case PWAIT: a=*ch->pc++;ch->wait=a; return;
+    case PVOLUME: ch->tone=*ch->pc++; break; // 音量は次の音で書く
+    case PEND:  ch->pc--; ch->wait=0; ay(ch->no20,0); return;
+    case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
+    case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext;
+    case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
+    pnext:      (*ch->sp)--;
+                if(*ch->sp) {
+                  if(*ch->sp==255) (*ch->sp)++; // 無限ループ。FM と違ってキーオフはしない
+                  // dda wait
+                  u8 a = *ch->pc++;
+                  a += ch->sp[-1];
+                  u8 e = *ch->pc;
+                  ch->pc += bc;
+                  if (e <= a) {
+                    a -= e;
+                    ch->sp[-1]=a;
+                    return;
+                  }
+                  ch->sp[-1]=a;
+                  break;
+                }
+                ch->sp-=2;
+                {// dda wait
+                  u8 a = *ch->pc++;
+                  a += ch->sp[1];
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
+                    ch->sp[1]=a;
+                    return;
+                  }
+                  ch->sp[1]=a;
+                }
+                break;
+    case PBREAKS:if (*ch->sp == 1) { bc = *ch->pc; goto pbreak; }
+                ch->pc+=1;
+                break;
+    case PBREAK:if (*ch->sp == 1) {
+                  bc = *(u16*)ch->pc;
+    pbreak:       ch->pc += bc;
+                  // add dda
+                  ch->sp-=2;
+                  u8 a = *ch->pc++;
+                  a += ch->sp[1];
+                  u8 c = *ch->pc++;
+                  if (c <= a) {
+                    a -= c;
+                    ch->sp[1]=a;
+                    return;
+                  }
+                  ch->sp[1]=a;
+                  break;
+                }
+                ch->pc+=2;
+                break;
+    case PSLAON: break; // PSG はキーオフを書かないので、スラーでもすることはない
+    }
+  }
+}
+static void psg_play(u8 **bs,u8* sp,u8 n) {
+  PSGDrvCh *p = psgch;
+  psg_size=n;
+  ay(7,0xB8); // トーンだけ出す (ノイズなし)
+  for(u8 i=0;i<3;i++) ay(8+i,0);
+  for(u8 i=0;i<n;i++,p++) {
+    p->pc=bs[i]+1;
+    p->wait=1;
+    p->tone=0;
+    p->no10=i+i;
+    p->no20=8+i;
+    p->sp=sp-1;
+    sp += bs[i][0]*2;
+  }
+}
+static void psg_update(void) {
+  PSGDrvCh *p = psgch;
+  for(u8 i=psg_size;i;i--,p++) p_exec_psg(p);
+}
+// ヘッダの上位バイト: ビット 0 はリズムモード、ビット 1〜2 は PSG のチャンネル数
+#define HDR_MODE(h) ((h)&1)
+#else
+#define HDR_MODE(h) (h)
+#endif
 #ifdef DEVKITSMS
 unsigned char p_init (void) __naked {
   __asm
@@ -566,7 +687,7 @@ void p_reset(unsigned char mode){
 }
 #ifndef OPT2
 void p_play(u8 **bs,u8*stack) {
-  p_reset(((u8*)bs)[1]);
+  p_reset(HDR_MODE(((u8*)bs)[1]));
   u8* sp=stack;
   track_size = (u8)*bs++;
   lfo_used=0;
@@ -585,12 +706,15 @@ void p_play(u8 **bs,u8*stack) {
     psgdrv[i].lfo=0;
     psgdrv[i].pn=0;
     psgdrv[i].key=0;
-    psgdrv[i].drum= (((u8*)bs)[-3]!=0 && i==6);
+    psgdrv[i].drum= (HDR_MODE(((u8*)bs)[-3])!=0 && i==6);
   }
+#ifdef PSG
+  psg_play(bs+track_size,sp,((u8*)bs)[-3]>>1);
+#endif
 }
 #else
 void p_play(u8 **bs,u8* stack) {
-  p_reset(((u8*)bs)[1]);
+  p_reset(HDR_MODE(((u8*)bs)[1]));
   u8* sp=stack;
   PSGDrvCh *p = psgdrv;
   track_size = (u8)*bs++;
@@ -610,8 +734,11 @@ void p_play(u8 **bs,u8* stack) {
     p->lfo=0;
     p->pn=0;
     p->key=0;
-    p->drum= (((u8*)bs)[-3]!=0 && i==6);
+    p->drum= (HDR_MODE(((u8*)bs)[-3])!=0 && i==6);
   }
+#ifdef PSG
+  psg_play(bs+track_size,sp,((u8*)bs)[-3]>>1);
+#endif
 }
 #endif
 #ifndef OPT
@@ -741,6 +868,9 @@ static void lfo_update(void) __naked {
 #endif
 #ifndef OPT2
 void p_update(void) {
+#ifdef PSG
+  psg_update();
+#endif
   if (lfo_used) lfo_update();
   for(u8 i=0;i<track_size;i++) p_exec(&psgdrv[i]);
 }
@@ -748,6 +878,9 @@ void p_update(void) {
 #ifndef OPT3
 void p_update(void) {
   PSGDrvCh *p = psgdrv;
+#ifdef PSG
+  psg_update();
+#endif
   if (lfo_used) lfo_update();
   for(u8 i=0;i<track_size;i++,p++) p_exec(p);
 }
@@ -755,6 +888,9 @@ void p_update(void) {
 void p_update(void) {
   PSGDrvCh *p = psgdrv;
   u8 i=track_size;
+#ifdef PSG
+  psg_update();
+#endif
   if (lfo_used) lfo_update();
   do {p_exec(p);p++;} while(--i);
 }

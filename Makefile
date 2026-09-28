@@ -11,12 +11,15 @@ EMU_SRC = bin/z80emu6448.c bin/emu2149.c bin/emu76489.c bin/emu2413.c
 # エミュレータのメモリは 64KB で、スタックは 0xFFFC から下に伸びる
 DATA_LOC = 0xE000
 
+# MML に PSG (1〜3) のチャンネルの行があれば -D PSG=1 を付ける (無ければ今と同じコード)
+PSG_OPT = $(shell grep -qE '^[1-9A-Ha-h]*[1-3][1-9A-Ha-h]*[[:space:]]' res/$(SRC).mml && echo -D PSG=1)
+
 t: 
 	make build -e "SRC=spehari"
 build: 6448 ihx2bin
-	@echo $(OPTION)
+	@echo $(OPTION) $(PSG_OPT)
 	@python mmlc.py res/$(SRC).mml bgm1 $(LOOPS) > data/$(SRC).h
-	@sdcc -mz80 $(OPTION) oplldrv.c --opt-code-speed -c
+	@sdcc -mz80 $(OPTION) $(PSG_OPT) oplldrv.c --opt-code-speed -c
 	@sdcc -mz80 $(OPTION) $(FRAMES_OPT) -D SRC=\"data/$(SRC).h\" main.c oplldrv.rel --opt-code-speed --no-std-crt0 --data-loc $(DATA_LOC) -o a.ihx
 	@python3 -c "import re,sys; m=open('a.map').read(); g=lambda k: int(re.search(r'([0-9A-F]+)\s+'+k+r'\s',m).group(1),16); e=g('s__CODE')+g('l__CODE'); e>$(DATA_LOC) and sys.exit('error: プログラムと曲のデータ (0x%04X まで) が RAM ($(DATA_LOC) から) に重なる' % e)"
 	@./ihx2bin a.ihx -o a.bin

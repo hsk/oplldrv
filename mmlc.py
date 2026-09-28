@@ -76,7 +76,8 @@ def ptn(p,s,m):
 def preprocess(src):
     pos = 0; m=[]
     macro={}; macrows={}
-    r = {"@":[],"#":[],"9":[],"A":[],"B":[],"C":[],"D":[],"E":[],"F":[],"G":[],"H":[]}; ch = 0
+    # 1〜3 は PSG (MGSDRV と同じ。MGSDRV は PSG を FM より先に処理する)
+    r = {"@":[],"#":[],"1":[],"2":[],"3":[],"9":[],"A":[],"B":[],"C":[],"D":[],"E":[],"F":[],"G":[],"H":[]}; ch = 0
     lines = {k:[] for k in r} # r と同じ並びで、その行の行番号
     lineno = lambda: src.count("\n",0,pos)+1
     def pt(pt,m):
@@ -112,7 +113,7 @@ def preprocess(src):
           return f"*{macrows[w.group(1)]+(int(w.group(2)) if w.group(2) else 0)}"
         v=re.compile("\\*([a-zA-Z])([0-9]*)").sub(macw,m[2].replace(" ",""))
         for x in m[1].upper(): # チャンネル名の小文字は大文字と同じ (MGSDRV と同じ)
-          if x not in r or x in "@#": fail(f"チャンネル {x} は使えない (9・A〜H)",ln,text)
+          if x not in r or x in "@#": fail(f"チャンネル {x} は使えない (1〜3・9・A〜H)",ln,text)
           o(x,v); lines[x].append((ln,text))
       else: pos+=1
     for k,vs in r.items():
@@ -501,15 +502,22 @@ def mml_compile(name,chs,loops=2):
   # 末尾の使っていないチャンネルは出力しない。出力すると終了処理 (PEND) がレジスタ 0x20+ch に 0 を書き、
   # リズムモードでは G・H (0x27・0x28) のリズムの音程が変わってしまう。途中の空きチャンネルは、
   # チャンネル番号がずれるので残す
-  names = [n for n in chs if n not in "@#"]
+  names = [n for n in chs if n not in "@#123"]
   while names and not chs[names[-1]]: names.pop()
-  i = -1
+  # PSG (1〜3) も同じく、末尾の使っていないチャンネルは出さない。配列は FM のあとに並べる
+  pnames = [n for n in "123" if n in chs]
+  while pnames and not chs[pnames[-1]]: pnames.pop()
+  i = -1; G.psgs=[]
   for n,ch in chs.items():
-    if n=="@" or n=="#" or n not in names: continue
-    i+=1
-    G.n2i[n]=i
-    G.i2n[i]=n
-    G.old_volume=15; G.r = []; G.at = 1
+    if n=="@" or n=="#" or (n not in names and n not in pnames): continue
+    psg = n in "123"
+    if psg: arr=f"p{len(G.psgs)}"; G.psgs.append(arr)
+    else:
+      i+=1; arr=i
+      G.n2i[n]=i
+      G.i2n[i]=n
+    G.old_volume=-1 if psg else 15; G.r = []; G.at = 1 # PSG は最初の音で必ず音量を出す
+    G.psg_on=False # PSG: キーオフせずに鳴っている音のあと (休符の音量 0 が 1 フレーム遅れる)
     G.volume=0; G.stack = []; G.stackMax = 0; G.o=4; G.slar=False; G.detune=0; G.fine=0 # \ と @\
     G.lfo=None; G.lfo_on=False # LFO の値 (h の 4 つ) と、動かしているか
     G.porta=None # ポルタメントの始めの音程 (ブロック, F-Number)
@@ -522,7 +530,8 @@ def mml_compile(name,chs,loops=2):
     def p(*bs):
       for b in bs: G.r.append(f"{b}")
     def outvolume():
-      v = ((G.at&15)<<4)|(G.volume&15)
+      # PSG は音量 (0〜15) をそのまま出す
+      v = 15-G.volume if psg else ((G.at&15)<<4)|(G.volume&15)
       if v != G.old_volume: p(PVOLUME,v); G.old_volume=v
     def out_drum_volume(v):
       v0=15-G.drum_v["b"]
@@ -609,13 +618,19 @@ def mml_compile(name,chs,loops=2):
     def cmd_compile(name,v):
       nonlocal vi
       match v:
+        case [c,*_] if psg and c in ("@","tone_p","@e","so","sf","h","hf","ho","\\","@\\","y","drum","drum_v"):
+                      fail(f"チャンネル {name}: PSG ではまだ {c} を使えない")
         case ["tone","r",a]:
                       # エンベロープを使っている間は、音量はエンベロープの値のまま (最後の値で止まる)
-                      if not G.env and not G.env_q: outvolume()
+                      # PSG は音量を次の音で書くので、休符では出さない
+                      if not G.env and not G.env_q and not psg: outvolume()
                       # 休符でキーオフする (MGSDRV と同じ)。リズムモードの ch6〜8 は
                       # 0x26〜0x28 がリズムの音程なので書かない
                       advance(a)
-                      if chs["#"]["opll_mode"] and i >= 6: outwait("r",PWAIT,PWAIT,G.fr)
+                      # PSG: 鳴っている音のあとの休符は、MGSDRV は音量 0 を 1 フレーム遅れて書く
+                      # (q で詰めた音と曲の終わりは遅れない)。1 フレーム待ってからキーオフする
+                      if psg and G.psg_on: outwait("r",PWAIT,PWAIT,min(G.all+1,G.fr)); G.psg_on=False
+                      if chs["#"]["opll_mode"] and i >= 6 and not psg: outwait("r",PWAIT,PWAIT,G.fr)
                       else: outwait("r",PKEYOFFL if G.lfo_on else PKEYOFF,PWAIT,G.fr)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
@@ -670,6 +685,7 @@ def mml_compile(name,chs,loops=2):
                       outwait(f"tone {b}", PWAIT if tie else False,PWAIT,start+on)
                       ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
                       if q!=1: outwait(f"off {b}",ko,ko,G.fr)
+                      G.psg_on=on>=ln
                       if porta:
                         nn=G.all-all0; qq,rr=divmod(abs(dl),nn) if nn else (0,0)
                         if not 1<=nn<=255: fail(f"チャンネル {name}: ポルタメントの音の長さ {nn} フレームは 1〜255 でないといけない")
@@ -718,6 +734,7 @@ def mml_compile(name,chs,loops=2):
                             ph=(G.ph+lb*k)%192
                             if frames(ph+lb,G.t)-frames(ph,G.t)==lb*G.t//192: G.ph=ph; break
                       G.stack.append(st)
+                      G.psg_on=True # 2 周目の入口は 1 周目の終わりの状態。わからないので鳴っているとする
                       G.stackMax=max(len(G.stack),G.stackMax);p(PLOOP,0,0)
         case ["]",n]: # n回ループする
                       if not G.stack: fail(f"チャンネル {name}: ] に対応する [ がない")
@@ -756,7 +773,7 @@ def mml_compile(name,chs,loops=2):
                       if len(G.stack) == 0 and n1 == 0: G.intro = st["fr"]
                       if br: # ブレイクアドレス
                         # 最後の周は | で抜けるので、ループのあとは | の時点の状態になる
-                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on = st["brstate"]
+                        G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on,G.psg_on = st["brstate"]
                         pos = len(G.r) - br - 2
                         if short_br: G.r[br]= f"{pos}"
                         else:
@@ -774,7 +791,7 @@ def mml_compile(name,chs,loops=2):
                       st["br"]=len(G.r)+1
                       st["bral"]=G.all-st["fr"] # | までに出した待ち
                       st["brn"]=len(st["ev"])   # | までの音の数
-                      st["brstate"]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on)
+                      st["brstate"]=(G.o,G.volume,G.old_volume,G.at,G.q,G.detune,G.fine,G.lfo,G.lfo_on,G.psg_on)
                       p(PBREAK,None,None)
         case ["drum",v,w]: out_drum_volume(v);p(f"/*PDRUM*/{v+0x60}");advance(w);outwait(f"drum {v}",None,PWAIT,G.fr)
         case ["drum_v",a,"+",n]: G.drum_v[a]=min(15,G.drum_v[a]+int(n)) # 0〜15 に収める (MGSDRV と同じ)
@@ -808,17 +825,18 @@ def mml_compile(name,chs,loops=2):
     p(PEND)
     G.r.insert(0,f"{G.stackMax}")
     split=",\n  "
-    print(f"u8 const {name}_{i}[{len(G.r)}]={{\n  {split.join(G.r)}}};")
+    print(f"u8 const {name}_{arr}[{len(G.r)}]={{\n  {split.join(G.r)}}};")
     G.all_len += len(G.r)
     print(f"{n} all {G.all} {G.fr}",file=sys.stderr)
     # 演奏時間: 無限ループならイントロ + 本体 x loops、なければ最後まで
     fr = G.fr if G.intro is None else G.intro + (G.fr-G.intro)*loops
     G.frames = max(G.frames, fr)
     
-  d = list(map(lambda i:f'{name}_{i},',range(i+1)))
+  d = list(map(lambda i:f'{name}_{i},',range(i+1)))+[f'{name}_{a},' for a in G.psgs]
   if "F" in G.n2i and G.n2i["F"]!=6:
     print(f"n2i {list(G.n2i.items())}")
-  d.insert(0,f"(u8*){len(d)|(chs['#']['opll_mode']<<8)},")
+  # ヘッダ: 下位バイトは FM のチャンネル数、上位バイトはリズムモード (ビット 0) と PSG のチャンネル数 (ビット 1〜2)
+  d.insert(0,f"(u8*){(i+1)|(chs['#']['opll_mode']<<8)|(len(G.psgs)<<9)},")
   d.insert(1, "NULL," if len(chs["@"].keys())==0 else f"{name}_sound,")
   print(f"u8* const {name}[]={{{''.join(d)}}};")
   print(f"#define {name}_frames {G.frames}")
