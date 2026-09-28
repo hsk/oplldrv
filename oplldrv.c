@@ -96,12 +96,13 @@ u8 psg_size;
 #define Q_LVAL 27
 #define Q_BASE 29
 #define Q_SIZE 31
-static void psg_play(u8 **bs,u8* sp,u8 n) {
+#ifndef OPT
+// PSG の演奏を始める。チャンネル数は psg_size に入れてから呼ぶ
+static void psg_play(u8 **bs,u8* sp) {
   PSGCh *p = psgch;
-  psg_size=n;
   ay(7,0xB8); // トーンだけ出す (ノイズなし)
   for(u8 i=0;i<3;i++) ay(8+i,0);
-  for(u8 i=0;i<n;i++,p++) {
+  for(u8 i=0;i<psg_size;i++,p++) {
     p->pc=bs[i]+1;
     p->wait=1;
     p->vol=0;
@@ -116,7 +117,6 @@ static void psg_play(u8 **bs,u8* sp,u8 n) {
     sp += bs[i][0]*2;
   }
 }
-#ifndef OPT
 // ADSR を 1 段進めて、音量が変わっていれば書く。キーオフしてもアタックとディケイは続ける (MGSDRV と同じ)
 static void psg_env(PSGCh* ch) {
   u8 e=ch->e;
@@ -263,6 +263,44 @@ static void psg_update(void) {
 }
 #else
 #define $ __endasm;__asm
+// PSG の演奏を始める (アセンブラ版。C 版の psg_play と同じことをする)。hl = bs、de = sp、チャンネル数は psg_size
+// C 版が 0 にしない値も 0 にするが、どれも使う前に命令で入れ直すので同じ
+static void psg_play(u8 **bs,u8* sp) __naked {
+  bs; sp;
+  __asm
+  ld a,#7 $ out (0xa0),a $ ld a,#0xB8 $ out (0xa1),a ; ay(7,0xB8); トーンだけ出す (ノイズなし)
+  ld bc,#0x0308
+  1$: ; for(i=0;i<3;i++) ay(8+i,0);
+    ld a,c $ out (0xa0),a $ xor a $ out (0xa1),a
+    inc c $ djnz 1$
+  push hl
+  ld hl,#_psgch $ ld b,#Q_SIZE*3
+  2$: ; psgch を 0 で埋める
+    ld (hl),a $ inc hl $ djnz 2$
+  pop hl
+  ld a,(_psg_size) $ or a $ ret z
+  push ix
+  ld ix,#_psgch
+  ld b,a $ ld c,#0 ; c = ch->reg (i+i)
+  3$: ; for (i=psg_size;i;i--,p++,bs++) {
+    push hl
+    ld a,(hl) $ inc hl $ ld h,(hl) $ ld l,a ; hl = *bs
+    ld a,(hl) $ inc hl ; a = (*bs)[0]
+    ld IX(Q_PC),l $ ld IX(Q_PC+1),h ; p->pc=*bs+1;
+    dec de $ ld IX(Q_SP),e $ ld IX(Q_SP+1),d $ inc de ; p->sp=sp-1;
+    ld l,a $ ld h,#0 $ add hl,hl $ add hl,de $ ex de,hl ; sp += (*bs)[0]*2;
+    pop hl $ inc hl $ inc hl
+    ld IX(Q_WAIT),#1 ; p->wait=1;
+    ld IX(Q_REG),c ; p->reg=i+i;
+    ld a,c $ rrca $ add a,#8 $ ld IX(Q_VREG),a ; p->vreg=8+i;
+    ld IX(Q_BASE),#0xff $ ld IX(Q_BASE+1),#0xff ; p->base=0xffff;
+    inc c $ inc c
+    push bc $ ld bc,#Q_SIZE $ add ix,bc $ pop bc
+    djnz 3$
+  pop ix
+  ret
+  __endasm;
+}
 // PSG を 1 フレーム進める (アセンブラ版。C 版の psg_lfo・p_exec_psg・psg_env と同じことをする)
 static void psg_update(void) __naked {
   __asm
@@ -1080,7 +1118,8 @@ void p_play(u8 **bs,u8*stack) {
     psgdrv[i].drum= (HDR_MODE(((u8*)bs)[-3])!=0 && i==6);
   }
 #ifdef PSG
-  psg_play(bs+track_size,sp,((u8*)bs)[-3]>>1);
+  psg_size=((u8*)bs)[-3]>>1;
+  psg_play(bs+track_size,sp);
 #endif
 }
 #else
@@ -1108,7 +1147,8 @@ void p_play(u8 **bs,u8* stack) {
     p->drum= (HDR_MODE(((u8*)bs)[-3])!=0 && i==6);
   }
 #ifdef PSG
-  psg_play(bs+track_size,sp,((u8*)bs)[-3]>>1);
+  psg_size=((u8*)bs)[-3]>>1;
+  psg_play(bs+track_size,sp);
 #endif
 }
 #endif
