@@ -1,4 +1,14 @@
 #include "oplldrv.h"
+#ifdef COUNT
+// -D COUNT=1: アセンブラ版で、読んだ命令の回数を数える (命令の振り分けの順を決めるため)。main.c が最後に出す
+u32 op_count[256];  // FM (p_exec)
+u32 psg_count[256]; // PSG (psg_update)
+#define COUNT_FM  push af $ push de $ push hl $ ld l,a $ ld h,#0 $ add hl,hl $ add hl,hl $ ld de,#_op_count $ add hl,de $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ 999$: $ pop hl $ pop de $ pop af
+#define COUNT_PSG push af $ push de $ push hl $ ld l,a $ ld h,#0 $ add hl,hl $ add hl,hl $ ld de,#_psg_count $ add hl,de $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ jr nz,999$ $ inc hl $ inc (hl) $ 999$: $ pop hl $ pop de $ pop af
+#else
+#define COUNT_FM
+#define COUNT_PSG
+#endif
 //#define OPT 1
 //#define OPT2 1 
 //#ifdef DEVKITSMS
@@ -324,6 +334,7 @@ static void psg_update(void) __naked {
     ld l,IX(Q_PC) $ ld h,IX(Q_PC+1)
   11$: ; while (1) {
     ld a,(hl) $ inc hl ; u8 a = *ch->pc++;
+    COUNT_PSG
     ; switch (a): よく使う命令ほど前で、cp で 2 つずつ振り分ける (FM の p_exec と同じ)
     cp #PKEYOFF $ jp c,20$ ; 音符 (オクターブ×16 + 音名)
     cp #PWAIT $ jp c,13$ $ jp z,14$ ; PKEYOFF PWAIT
@@ -825,19 +836,26 @@ void p_exec(PSGDrvCh* ch) __naked {
   push ix $ push hl $ pop ix $ ld l,P_PC(ix) $ ld h,P_PC+1(ix)
   1$:; while (1) {
     ld a,(hl) $ inc hl; u8 a = *ch->pc++;
+    COUNT_FM
     ; switch (a
-      cp #PDRUM $ jp c, 3$
-      cp #PKEYOFF $ jp c,12$ $ jp z,4$
-      cp #PVOLUME $ jp c,5$ $ jp z,6$
-      cp #PLOOP $ jp c,7$ $ jp z,8$
-      cp #PBREAKS $ jp c,16$ $ jp z,17$
-      cp #PDRUMV2 $ jp c,13$ $ jp z,18$
-      cp #PDRUMV $ jp c,19$ $ jp z,15$
-      cp #PBREAK $ jp c,9$ $ jp z,10$
-      cp #PSUSON $ jp c,11$ $ jp z,14$
-      cp #PTONEF $ jp c,20$ $ jp z,21$
-      cp #PKEYOFFL $ jp c,22$ $ jp z,23$
-      cp #PLFOOFF $ jp c,24$ $ jp z,25$ $ jp 26$
+      ; 全曲の命令の回数 (-D COUNT=1 で数える) から作った比較の木。音符 (約半分) を最初に分け、
+      ; よく出る命令ほど浅く、ゲームの曲で出ない命令 (LFO・ポルタメントなど) は奥で二分探索のように分ける
+      cp #PDRUM $ jp c,3$ ; 音符
+      cp #PNEXTS $ jp c,40$ $ jp z,16$ ; 0x60〜0x84 は 40$ へ、PNEXTS
+      cp #PSLAON $ jp z,13$ $ jp c,17$ ; PSLAON、PBREAKS
+      cp #PTONEL $ jp z,22$ $ jp c,41$ ; PTONEL、0x88〜0x90 は 41$ へ
+      cp #PLFO $ jp c,23$ $ jp z,24$ ; PKEYOFFL、PLFO
+      cp #PPORTA $ jp c,25$ $ jp 26$ ; PLFOOFF、PPORTA
+    40$: ; 0x60〜0x84
+      cp #PKEYOFF $ jp z,4$ $ jp c,12$ ; PKEYOFF、ドラム
+      cp #PVOLUME $ jp z,6$ $ jp c,5$ ; PVOLUME、PWAIT
+      cp #PLOOP $ jp nc,8$ $ jp 7$ ; PLOOP、PEND
+    41$: ; 0x88〜0x90
+      cp #PSLOAD $ jp c,42$ $ jp z,11$ ; 0x88〜0x8C は 42$ へ、PSLOAD
+      cp #PSUSOFF $ jp z,20$ $ jp c,14$ $ jp 21$ ; PSUSOFF、PSUSON、PTONEF
+    42$: ; 0x88〜0x8C
+      cp #PDRUMV1 $ jp z,19$ $ jp c,18$ ; PDRUMV1、PDRUMV2
+      cp #PNEXT $ jp c,15$ $ jp z,9$ $ jp 10$ ; PDRUMV、PNEXT、PBREAK
     ; ) {
     3$:; case PTONE:
       ld d,a

@@ -77,7 +77,7 @@ typedef struct PSGDrvCh {
 #define PVOLUME 0x82
 #define PEND    0x83
 #define PLOOP   0x84
-// アセンブラ版は cp で 2 つずつ振り分けるので、よく使う命令ほど前に置く
+// PSG のアセンブラ版は cp で 2 つずつ振り分けるので、よく使う命令ほど前に置く (FM の p_exec は回数から作った比較の木)
 #define PNEXTS  0x85 // PNEXT の飛び先を符号付き 1 バイトで持つ形
 #define PBREAKS 0x86 // PBREAK の飛び先を 1 バイト (0〜255) で持つ形
 #define PSLAON  0x87

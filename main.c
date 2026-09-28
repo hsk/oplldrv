@@ -32,4 +32,20 @@ void main(void) {
     wait();
     p_update();
   }
+#ifdef COUNT
+  // 命令の回数を "count fm 81 000012AB" の形で出す (0 のものは出さない)
+  extern u32 op_count[256], psg_count[256];
+  for (u8 k=0;k<2;k++) {
+    u32* c = k ? psg_count : op_count;
+    for (u16 i=0;i<256;i++) {
+      if (!c[i]) continue;
+      for (const char* t = k ? "count psg " : "count fm "; *t; t++) putchar(*t);
+      u8 n = (u8)i;
+      putchar("0123456789ABCDEF"[n>>4]); putchar("0123456789ABCDEF"[n&15]); putchar(' ');
+      u32 v = c[i];
+      for (s8 b=28;b>=0;b-=4) putchar("0123456789ABCDEF"[(v>>b)&15]);
+      putchar('\n');
+    }
+  }
+#endif
 }
