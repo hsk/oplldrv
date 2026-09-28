@@ -690,7 +690,10 @@ def mml_compile(name,chs,loops=2):
                         if G.fine or G.detune:
                           t=(((PSG_TONES[b]+G.fine)>>G.o)-G.detune)&0xffff
                           p(PTONEF,t&255,t>>8)
-                        else: p(f"/*PTONE,*/{b+G.o*12}")
+                        else:
+                          # 音符はオクターブ×16 + 音名 (ドライバは o1 の表の値をオクターブの数だけ右へずらす)
+                          if G.o>7: fail(f"チャンネル {name}: PSG の o{G.o+1} は使えない (o1〜o8)")
+                          p(f"/*PTONE,*/{G.o*16+b}")
                       elif G.lfo_on and legato and G.lpitch==pitch(b):
                         # LFO をかけた音を同じ音程でスラーでつなぐときは、MGSDRV は何もしない (LFO も続ける)。
                         # 直前の PSLAON を消して、音を出し直さずに待つだけにする

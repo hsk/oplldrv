@@ -26,16 +26,10 @@ static u16 const tones[] = {
 __sfr __at 0xA0 IOPortPSG1;
 __sfr __at 0xA1 IOPortPSG2;
 #define ay(reg,parm) {IOPortPSG1 = (reg);IOPortPSG2 = (parm);}
-// 音程表: 周期。MGSDRV と同じ値 (o4a = 254、440Hz)
+// 音程表: o1 の周期。MGSDRV と同じく、o の音は o1 の値を o-1 だけ右へずらす (o4a = 2034>>3 = 254、440Hz)
+// 音符はオクターブ×16 + 音名 (0x00〜0x7B)。PSG はドラムを使わないので PKEYOFF より前は全部音符
 static u16 const psg_tones[] = {
   3421, 3228, 3047, 2876, 2715, 2562, 2419, 2283, 2155, 2034, 1920, 1812,
-  1710, 1614, 1523, 1438, 1357, 1281, 1209, 1141, 1077, 1017,  960,  906,
-   855,  807,  761,  719,  678,  640,  604,  570,  538,  508,  480,  453,
-   427,  403,  380,  359,  339,  320,  302,  285,  269,  254,  240,  226,
-   213,  201,  190,  179,  169,  160,  151,  142,  134,  127,  120,  113,
-   106,  100,   95,   89,   84,   80,   75,   71,   67,   63,   60,   56,
-    53,   50,   47,   44,   42,   40,   37,   35,   33,   31,   30,   28,
-    26,   25,   23,   22,   21,   20,   18,   17,   16,   15,   15,   14,
 };
 // PSG のチャンネル
 typedef struct PSGCh {
@@ -147,8 +141,8 @@ static void p_exec_psg(PSGCh* ch) {
   ch->wait++;
   while (1) {
     u8 a = *ch->pc++;
-    if (a < PDRUM) {
-      t = psg_tones[a];
+    if (a < PKEYOFF) {
+      t = psg_tones[a&15]>>(a>>4);
     ptone:
       // 同じ音程を & でつなぐときは、音程も LFO もそのまま (FM と同じ)
       if (!ch->sla || t!=ch->base) {
@@ -327,8 +321,8 @@ static void psg_update(void) __naked {
   11$: ; while (1) {
     ld a,(hl) $ inc hl ; u8 a = *ch->pc++;
     ; switch (a): よく使う命令ほど前で、cp で 2 つずつ振り分ける (FM の p_exec と同じ)
-    cp #PDRUM $ jp c,20$ ; 音符
-    cp #PWAIT $ jp c,13$ $ jp z,14$ ; PKEYOFF (0x60〜0x7F は使わない) PWAIT
+    cp #PKEYOFF $ jp c,20$ ; 音符 (オクターブ×16 + 音名)
+    cp #PWAIT $ jp c,13$ $ jp z,14$ ; PKEYOFF PWAIT
     cp #PEND $ jp c,15$ $ jp z,16$ ; PVOLUME PEND
     cp #PNEXTS $ jp c,17$ $ jp z,18$ ; PLOOP PNEXTS
     cp #PSLAON $ jp c,19$ $ jp z,21$ ; PBREAKS PSLAON
@@ -440,10 +434,17 @@ static void psg_update(void) __naked {
   25$: ; case PTONEF: @\ と \ をかけた音。周期をデータで持つ
     ld e,(hl) $ inc hl $ ld d,(hl) $ inc hl
     jr 201$
-  20$: ; 音符: de = psg_tones[a]
-    add a,a
+  20$: ; 音符: de = psg_tones[a&15]>>(a>>4)
+    ld c,a
+    and #15 $ add a,a
     add a,#<(_psg_tones) $ ld e,a $ ld a,#0 $ adc a,#>(_psg_tones) $ ld d,a
-    ex de,hl $ ld a,(hl) $ inc hl $ ld h,(hl) $ ld l,a $ ex de,hl
+    ex de,hl $ ld a,(hl) $ inc hl $ ld h,(hl) $ ld l,a ; hl = o1 の周期、de = ch->pc
+    ld a,c $ and #0xf0 $ jr z,209$
+    2091$: ; オクターブの数だけ右へずらす
+      srl h $ rr l
+      sub #16 $ jr nz,2091$
+    209$:
+    ex de,hl
   201$: ; de = 周期
     ; 同じ音程を & でつなぐときは、音程も LFO もそのまま (FM と同じ)
     ld a,IX(Q_SLA) $ or a $ jr z,202$ ; if (!ch->sla || t!=ch->base) {
