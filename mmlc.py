@@ -158,10 +158,17 @@ def parse_env(n,src):
     r.append((at,int(d[i],16))); at=None; i+=1
   if not r: fail(f"@e{n}: エンベロープのデータがない")
   ENVS[n]=r
+PSG_ENVS={} # PSG の @r (番号 → [ミキサー, ノイズ周期, 初期値, AR, DR, SL, SR, RR])
+def parse_psg_env(n,src):
+  try: v=list(map(int,src.split(",")))
+  except ValueError: fail(f"@r{n} = {{{src}}}: 数を 8 つ書く")
+  if len(v)!=8 or not all(0<=x<=255 for x in v): fail(f"@r{n} = {{{src}}}: 0〜255 の数を 8 つ書く (ミキサー,ノイズ周期,初期値,AR,DR,SL,SR,RR)")
+  PSG_ENVS[n]=v
 def parse_at(lines):
   r = {};m=[]
   for l in lines:
     if ptn("^e([0-9]+)=\\{([^\\}]*)\\}$",l,m): parse_env(int(m[1]),m[2]); continue
+    if ptn("^r([0-9]+)=\\{([^\\}]*)\\}$",l,m): parse_psg_env(int(m[1]),m[2]); continue
     # @v17={...} と @17={...} は同じ (MGSDRV と同じ)
     if ptn("^v?([0-9]+)=\\{([^\\}]+)\\}$",l,m):
       r["@"+m[1]]=conv_voice(list(map(int,m[2].split(","))))
@@ -619,7 +626,13 @@ def mml_compile(name,chs,loops=2):
     def cmd_compile(name,v):
       nonlocal vi
       match v:
-        case [c,*_] if psg and c in ("@","tone_p","@e","so","sf","h","hf","ho","\\","@\\","y","drum","drum_v"):
+        case ["@",v] if psg:
+                      # @rn の ADSR を使う。ミキサーは 0 (変えない) と 1 (トーン) だけ (ノイズはまだ)
+                      if v not in PSG_ENVS: fail(f"チャンネル {name}: PSG の @{v} の @r{v} が定義されていない (@r{v} = {{...}})")
+                      e=PSG_ENVS[v]
+                      if e[0] not in (0,1): fail(f"チャンネル {name}: @r{v} のミキサー {e[0]} はまだ使えない (0 か 1)")
+                      p(PSLOAD,*e[2:])
+        case [c,*_] if psg and c in ("tone_p","@e","so","sf","h","hf","ho","\\","@\\","y","drum","drum_v"):
                       fail(f"チャンネル {name}: PSG ではまだ {c} を使えない")
         case ["tone","r",a]:
                       # エンベロープを使っている間は、音量はエンベロープの値のまま (最後の値で止まる)

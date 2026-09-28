@@ -37,10 +37,50 @@ static u16 const psg_tones[] = {
     53,   50,   47,   44,   42,   40,   37,   35,   33,   31,   30,   28,
     26,   25,   23,   22,   21,   20,   18,   17,   16,   15,   15,   14,
 };
-PSGDrvCh psgch[3]; // no10 は周期のレジスタ (2ch)、no20 は音量のレジスタ (8+ch)、tone は音量
+// PSG のチャンネル
+typedef struct PSGCh {
+  u8 wait;
+  u8* pc;
+  u8* sp;
+  u8 vol;   // v (0〜15)
+  u8 reg;   // 周期のレジスタ (2ch)
+  u8 vreg;  // 音量のレジスタ (8+ch)
+  u8 sla;   // & でつなぐ音の前なら 1
+  // @r の ADSR (MGSDRV と同じ)。レベル e (0〜255) を毎フレーム動かし、音量は floor(e * (v+1) / 256)
+  u8 env;   // 段階。0 なら ADSR を使わない (音量一定で、キーオフで音量 0)
+  u8 koff;  // キーオフしたら 1
+  u8 e;     // レベル
+  u8 ei, ea, ed, es, esr, er; // 初期値、AR、DR、SL、SR、RR
+  u8 out;   // 最後に書いた音量
+} PSGCh;
+#define ENV_A 1 // アタック: +AR。255 になったらディケイへ
+#define ENV_D 2 // ディケイ: -DR。SL になったらサステインへ
+#define ENV_S 3 // サステイン: -SR。0 になったらリリースへ。キーオフしていればリリースへ
+#define ENV_R 4 // リリース: -RR
+PSGCh psgch[3];
 u8 psg_size;
+// ADSR を 1 段進めて、音量が変わっていれば書く。キーオフしてもアタックとディケイは続ける (MGSDRV と同じ)
+static void psg_env(PSGCh* ch) {
+  u8 e=ch->e;
+  if (ch->env==ENV_S && ch->koff) ch->env=ENV_R;
+  switch (ch->env) {
+  case ENV_A: e = (e+ch->ea>255) ? 255 : e+ch->ea;
+              if (e==255) ch->env=ENV_D;
+              break;
+  case ENV_D: e = (e<ch->ed || e-ch->ed<ch->es) ? ch->es : e-ch->ed;
+              if (e==ch->es) ch->env=ENV_S;
+              break;
+  case ENV_S: e = (e<ch->esr) ? 0 : e-ch->esr;
+              if (!e) ch->env=ENV_R;
+              break;
+  default:    e = (e<ch->er) ? 0 : e-ch->er;
+  }
+  ch->e=e;
+  u8 v=(u8)(((u16)e*(ch->vol+1))>>8);
+  if (v!=ch->out) { ch->out=v; ay(ch->vreg,v); }
+}
 // PSG のチャンネルを 1 フレーム進める。音符は周期と音量を書き、キーオフは音量 0
-static void p_exec_psg(PSGDrvCh* ch) {
+static void p_exec_psg(PSGCh* ch) {
   u16 bc;
   if (--ch->wait) {
     return;
@@ -50,17 +90,20 @@ static void p_exec_psg(PSGDrvCh* ch) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
       u16 t = psg_tones[a];
-      ay(ch->no10,(u8)t);
-      ay(ch->no10+1,(u8)(t>>8));
-      ay(ch->no20,ch->tone);
+      ay(ch->reg,(u8)t);
+      ay(ch->reg+1,(u8)(t>>8));
+      if (!ch->env) ay(ch->vreg,ch->vol)
+      else if (ch->sla) psg_env(ch); // & でつなぐ音はやり直さず、このフレームはもう 1 段進める (MGSDRV と同じ)
+      else { ch->e=ch->ei; ch->env=ENV_A; ch->koff=0; }
+      ch->sla=0;
       a=*ch->pc++;ch->wait=a;
       return;
     }
     switch (a) {
-    case PKEYOFF: ay(ch->no20,0);
+    case PKEYOFF: if (ch->env) ch->koff=1; else ay(ch->vreg,0);
     case PWAIT: a=*ch->pc++;ch->wait=a; return;
-    case PVOLUME: ch->tone=*ch->pc++; break; // 音量は次の音で書く
-    case PEND:  ch->pc--; ch->wait=0; ay(ch->no20,0); return;
+    case PVOLUME: ch->vol=*ch->pc++; break; // 音量は次の音 (ADSR なら次の段) で書く
+    case PEND:  ch->pc--; ch->wait=0; ch->env=0; ay(ch->vreg,0); return;
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext;
     case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
@@ -114,28 +157,40 @@ static void p_exec_psg(PSGDrvCh* ch) {
                 }
                 ch->pc+=2;
                 break;
-    case PSLAON: break; // PSG はキーオフを書かないので、スラーでもすることはない
+    case PSLAON: ch->sla=1; break;
+    case PSLOAD: // @n: @rn の ADSR (初期値、AR、DR、SL、SR、RR) を使う。レベルは 0 にする (MGSDRV と同じ)
+                ch->ei=*ch->pc++; ch->ea=*ch->pc++; ch->ed=*ch->pc++;
+                ch->es=*ch->pc++; ch->esr=*ch->pc++; ch->er=*ch->pc++;
+                ch->e=0; ch->env=ENV_R; ch->out=255;
+                break;
     }
   }
 }
 static void psg_play(u8 **bs,u8* sp,u8 n) {
-  PSGDrvCh *p = psgch;
+  PSGCh *p = psgch;
   psg_size=n;
   ay(7,0xB8); // トーンだけ出す (ノイズなし)
   for(u8 i=0;i<3;i++) ay(8+i,0);
   for(u8 i=0;i<n;i++,p++) {
     p->pc=bs[i]+1;
     p->wait=1;
-    p->tone=0;
-    p->no10=i+i;
-    p->no20=8+i;
+    p->vol=0;
+    p->reg=i+i;
+    p->vreg=8+i;
+    p->sla=0;
+    p->env=0;
     p->sp=sp-1;
     sp += bs[i][0]*2;
   }
 }
+// PSG を 1 フレーム進める。命令を読んでから ADSR を 1 段進める
+// (MGSDRV は ADSR を先に進めてから命令を読み、音のときはもう 1 段進める。休符のキーオフが 1 フレーム遅れるのはコンパイラが合わせる)
 static void psg_update(void) {
-  PSGDrvCh *p = psgch;
-  for(u8 i=psg_size;i;i--,p++) p_exec_psg(p);
+  PSGCh *p = psgch;
+  for(u8 i=psg_size;i;i--,p++) {
+    p_exec_psg(p);
+    if (p->env) psg_env(p);
+  }
 }
 // ヘッダの上位バイト: ビット 0 はリズムモード、ビット 1〜2 は PSG のチャンネル数
 #define HDR_MODE(h) ((h)&1)
