@@ -12,6 +12,7 @@
 *.bin
 *.asm
 # 実行結果
+/build/
 /result
 *.wav
 *.mp4
