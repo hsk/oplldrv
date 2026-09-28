@@ -632,7 +632,7 @@ def mml_compile(name,chs,loops=2):
                       e=PSG_ENVS[v]
                       if e[0] not in (0,1): fail(f"チャンネル {name}: @r{v} のミキサー {e[0]} はまだ使えない (0 か 1)")
                       p(PSLOAD,*e[2:])
-        case [c,*_] if psg and c in ("tone_p","@e","so","sf","h","hf","ho","\\","@\\","y","drum","drum_v"):
+        case [c,*_] if psg and c in ("tone_p","@e","so","sf","\\","@\\","y","drum","drum_v"):
                       fail(f"チャンネル {name}: PSG ではまだ {c} を使えない")
         case ["tone","r",a]:
                       # エンベロープを使っている間は、音量はエンベロープの値のまま (最後の値で止まる)
@@ -645,7 +645,7 @@ def mml_compile(name,chs,loops=2):
                       # (q で詰めた音と曲の終わりは遅れない)。1 フレーム待ってからキーオフする
                       if psg and G.psg_on: outwait("r",PWAIT,PWAIT,min(G.all+1,G.fr)); G.psg_on=False
                       if chs["#"]["opll_mode"] and i >= 6 and not psg: outwait("r",PWAIT,PWAIT,G.fr)
-                      else: outwait("r",PKEYOFFL if G.lfo_on else PKEYOFF,PWAIT,G.fr)
+                      else: outwait("r",PKEYOFFL if G.lfo_on and not psg else PKEYOFF,PWAIT,G.fr)
         case ["v",b] if name=="F" and chs["#"]["opll_mode"]: # リズムモードの F はドラムの音量
                       for k in G.drum_v.keys(): G.drum_v[k]=b
                       G.drum_rv=b
@@ -678,14 +678,14 @@ def mml_compile(name,chs,loops=2):
                         pi=len(G.r)+3
                         p(PPORTA,porta[1]&255,(porta[0]<<1)|(porta[1]>>8),0,0,0,1 if dl<0 else 0)
                         all0=G.all
-                      elif G.lfo_on and legato and G.lpitch==pitch(b):
+                      elif G.lfo_on and legato and G.lpitch==pitch(b) and not psg:
                         # LFO をかけた音を同じ音程でスラーでつなぐときは、MGSDRV は何もしない (LFO も続ける)。
                         # 直前の PSLAON を消して、音を出し直さずに待つだけにする
                         del G.r[len(G.r)-1-G.r[::-1].index(PSLAON)]
                         tie=True
-                      elif G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12]):
+                      elif not psg and (G.lfo_on or pitch(b)!=((b+G.o*12)//12,TONES[b%12])):
                         # デチューンで音程表と違う音は、音程をデータで持つ (PTONEF)。172〜344 から出たらブロックをまたぐ
-                        # LFO をかける音も音程をデータで持つ (PTONEL)
+                        # LFO をかける音も音程をデータで持つ (PTONEL)。PSG は音程表の番号のまま (ドライバが LFO をかける)
                         blk,f=pitch(b)
                         p(PTONEL if G.lfo_on else PTONEF,f&255,(blk<<1)|(f>>8))
                       else: p(f"/*PTONE,*/{b+G.o*12}")
@@ -697,7 +697,7 @@ def mml_compile(name,chs,loops=2):
                       start=G.fr; ln=advance(w); q8=round(q*8)
                       on=ln if q8 in (0,8) else min(ln,max(1,(ln*8*q8&0xffff)>>6))
                       outwait(f"tone {b}", PWAIT if tie else False,PWAIT,start+on)
-                      ko = PKEYOFFL if G.lfo_on or porta else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
+                      ko = PKEYOFFL if (G.lfo_on or porta) and not psg else PKEYOFF # LFO・ポルタメントの音はキーの状態を覚える
                       if q!=1: outwait(f"off {b}",ko,ko,G.fr)
                       G.psg_on=on>=ln
                       if porta:

@@ -52,6 +52,15 @@ typedef struct PSGCh {
   u8 e;     // レベル
   u8 ei, ea, ed, es, esr, er; // 初期値、AR、DR、SL、SR、RR
   u8 out;   // 最後に書いた音量
+  // ソフトウェア LFO (h a,b,c,d)。FM と同じ三角波で、周期からずれを引く (周期なので向きが逆)
+  u8 lfo;   // 1 で動かす
+  u8 la, lb, lc; s8 ld; // 遅れ、振れ幅の段数、速さ、1 段の値
+  u8 lt;    // 次の段までのフレーム数
+  u8 lcnt;  // 折り返すまでの段数
+  s8 lstep; // 今の向きの 1 段 (±ld)
+  s16 lval; // 今のずれ
+  u16 base; // 音の周期
+  u8 note;  // 音程表の番号 (同じ音程を & でつなぐときは LFO を続ける)
 } PSGCh;
 #define ENV_A 1 // アタック: +AR。255 になったらディケイへ
 #define ENV_D 2 // ディケイ: -DR。SL になったらサステインへ
@@ -89,9 +98,16 @@ static void p_exec_psg(PSGCh* ch) {
   while (1) {
     u8 a = *ch->pc++;
     if (a < PDRUM) {
-      u16 t = psg_tones[a];
-      ay(ch->reg,(u8)t);
-      ay(ch->reg+1,(u8)(t>>8));
+      // 同じ音程を & でつなぐときは、音程も LFO もそのまま (FM と同じ)
+      if (!ch->sla || a!=ch->note) {
+        // LFO をやり直す。& でつなぐときは速さのタイマーを続ける (FM と同じ)
+        if (!ch->sla) ch->lt=ch->la+ch->lc+2;
+        ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
+        u16 t = psg_tones[a];
+        ch->note=a; ch->base=t;
+        ay(ch->reg,(u8)t);
+        ay(ch->reg+1,(u8)(t>>8));
+      }
       if (!ch->env) ay(ch->vreg,ch->vol)
       else if (ch->sla) psg_env(ch); // & でつなぐ音はやり直さず、このフレームはもう 1 段進める (MGSDRV と同じ)
       else { ch->e=ch->ei; ch->env=ENV_A; ch->koff=0; }
@@ -103,7 +119,7 @@ static void p_exec_psg(PSGCh* ch) {
     case PKEYOFF: if (ch->env) ch->koff=1; else ay(ch->vreg,0);
     case PWAIT: a=*ch->pc++;ch->wait=a; return;
     case PVOLUME: ch->vol=*ch->pc++; break; // 音量は次の音 (ADSR なら次の段) で書く
-    case PEND:  ch->pc--; ch->wait=0; ch->env=0; ay(ch->vreg,0); return;
+    case PEND:  ch->pc--; ch->wait=0; ch->env=0; ch->lfo=0; ay(ch->vreg,0); return;
     case PLOOP: *(++ch->sp) = *ch->pc++; *(++ch->sp) = *ch->pc++; break;
     case PNEXTS: bc = (u16)(s16)(s8)*ch->pc++; goto pnext;
     case PNEXT: bc = *(u16*)ch->pc; ch->pc+=2;
@@ -158,6 +174,12 @@ static void p_exec_psg(PSGCh* ch) {
                 ch->pc+=2;
                 break;
     case PSLAON: ch->sla=1; break;
+    case PLFO:  ch->la=*ch->pc++; ch->lb=*ch->pc++; ch->lc=*ch->pc++; ch->ld=*ch->pc++;
+                ch->lfo=1;
+                ch->lt=ch->la+ch->lc+2;
+                ch->lval=0; ch->lstep=ch->ld; ch->lcnt=(u8)((ch->lb+1)>>1);
+                break;
+    case PLFOOFF: ch->lfo=0; break;
     case PSLOAD: // @n: @rn の ADSR (初期値、AR、DR、SL、SR、RR) を使う。レベルは 0 にする (MGSDRV と同じ)
                 ch->ei=*ch->pc++; ch->ea=*ch->pc++; ch->ed=*ch->pc++;
                 ch->es=*ch->pc++; ch->esr=*ch->pc++; ch->er=*ch->pc++;
@@ -179,15 +201,30 @@ static void psg_play(u8 **bs,u8* sp,u8 n) {
     p->vreg=8+i;
     p->sla=0;
     p->env=0;
+    p->lfo=0;
+    p->la=p->lb=p->lc=p->ld=0;
+    p->note=255;
     p->sp=sp-1;
     sp += bs[i][0]*2;
   }
 }
-// PSG を 1 フレーム進める。命令を読んでから ADSR を 1 段進める
+// LFO を 1 フレーム進める (MGSDRV と同じく、命令を読む前)
+static void psg_lfo(PSGCh* ch) {
+  if (--ch->lt) return;
+  ch->lt=ch->lc+1;
+  if (!ch->lcnt) { ch->lstep=-ch->lstep; ch->lcnt=ch->lb+1; } // 三角波の折り返し
+  ch->lcnt--;
+  ch->lval+=ch->lstep;
+  u16 t=ch->base-ch->lval;
+  ay(ch->reg,(u8)t);
+  ay(ch->reg+1,(u8)(t>>8));
+}
+// PSG を 1 フレーム進める。LFO を進め、命令を読んでから ADSR を 1 段進める
 // (MGSDRV は ADSR を先に進めてから命令を読み、音のときはもう 1 段進める。休符のキーオフが 1 フレーム遅れるのはコンパイラが合わせる)
 static void psg_update(void) {
   PSGCh *p = psgch;
   for(u8 i=psg_size;i;i--,p++) {
+    if (p->lfo) psg_lfo(p);
     p_exec_psg(p);
     if (p->env) psg_env(p);
   }
