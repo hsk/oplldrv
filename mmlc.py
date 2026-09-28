@@ -253,9 +253,10 @@ def parse_channel(ch,src,drum):
         pos+=1; o(c+m[1],(-1 if m[1]=="-" else 1)*readInt())
       case "[": o(c); counts.append(readInt(None)) # [3 のように先頭にも回数を書ける
       case "]":
-        # 回数は [n があればそれ (]m より優先)、なければ ]m、どちらもなければ 2 回 (MGSDRV と同じ)
+        # 回数は ]m (なければ 2)。それが 2 で [n があれば [n (MGSDRV と同じ。[4 c]3 は 3 回、[4 c]2 は 4 回)
         n=readInt(None); n0=counts.pop() if counts else None
-        o(c, n0 if n0 is not None else n if n is not None else 2)
+        if n is None: n=2
+        o(c, n0 if n==2 and n0 is not None else n)
       case "@" if src[pos]=="e": pos+=1; o("@e",readInt()) # ソフトウェアエンベロープ。@e0 で止める
       case "@" if src[pos]=="\\": # 細かいデチューン @\n (0〜255。255 で半音)
         pos+=1; n=readInt()
