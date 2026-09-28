@@ -40,13 +40,21 @@ def read_oplldrv(path):
 
 
 def read_mgs(path):
+    """OPLL への書き込みと、比べる範囲の終わり (最後の OPLL の書き込みか、値の変わった最後の PSG の書き込みのフレーム)。
+    MGSDRV は PSG の音量を毎フレーム書く (休符の間も 0 を書き続ける) ので、値が変わらない PSG の書き込みは数えない"""
     r = []
     last = 0
+    psg = {}
     for line in open(path):
         w = line.split()
         if len(w) == 4 and w[1] == 'opll':
             r.append((int(w[0]), int(w[2]), int(w[3])))
             last = int(w[0])
+        elif len(w) == 4 and w[1] == 'psg':
+            f, reg, v = int(w[0]), int(w[2]), int(w[3])
+            if psg.get(reg) != v:
+                psg[reg] = v
+                last = max(last, f)
     return r, last
 
 
@@ -323,7 +331,7 @@ def compare(name, a_path, b_path, verbose=False):
                      drum_pitch=len(pitch_ng))
     pa, pb = read_psg(a_path), read_psg(b_path)
     if pa or pb:
-        total.update(compare_psg(psg_states(pa, end), psg_states(pb, end), verbose))
+        total.update(compare_psg(psg_states(pa, end + 1), psg_states(pb, end + 1), verbose))
     if fnums:
         print('  F-Number の違い (音名 oplldrv MGSDRV 回数): ' + ' '.join(
             f'{n}:{a}/{b}x{c}' for (n, a, b), c in sorted(fnums.items(), key=lambda x: -x[1])[:12]))
